@@ -237,10 +237,7 @@ void sel_netport_flush(void)
 static __init int sel_netport_init(void)
 {
 	int iter;
-	int ret;
-#ifdef CONFIG_ALWAYS_ENFORCE
-	selinux_enabled = 1;
-#endif
+
 	if (!selinux_enabled)
 		return 0;
 
@@ -249,7 +246,7 @@ static __init int sel_netport_init(void)
 		sel_netport_hash[iter].size = 0;
 	}
 
-	return ret;
+	return 0;
 }
 
 __initcall(sel_netport_init);

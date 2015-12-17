@@ -16,9 +16,7 @@
 #include <crypto/internal/skcipher.h>
 #include <linux/cpumask.h>
 #include <linux/err.h>
-#include <linux/init.h>
 #include <linux/kernel.h>
-#include <linux/module.h>
 #include <linux/rtnetlink.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
@@ -29,8 +27,6 @@
 #include <crypto/scatterwalk.h>
 
 #include "internal.h"
-
-static const char *skcipher_default_geniv __read_mostly;
 
 struct ablkcipher_buffer {
 	struct list_head	entry;
@@ -51,11 +47,6 @@ static inline void ablkcipher_buffer_write(struct ablkcipher_buffer *p)
 void __ablkcipher_walk_complete(struct ablkcipher_walk *walk)
 {
 	struct ablkcipher_buffer *p, *tmp;
-
-#ifdef CONFIG_CRYPTO_FIPS
-	if (unlikely(in_fips_err()))
-		return;
-#endif
 
 	list_for_each_entry_safe(p, tmp, &walk->buffers, entry) {
 		ablkcipher_buffer_write(p);
@@ -78,6 +69,7 @@ static inline void ablkcipher_queue_write(struct ablkcipher_walk *walk,
 static inline u8 *ablkcipher_get_spot(u8 *start, unsigned int len)
 {
 	u8 *end_page = (u8 *)(((unsigned long)(start + len - 1)) & PAGE_MASK);
+
 	return max(start, end_page);
 }
 
@@ -95,7 +87,7 @@ static inline unsigned int ablkcipher_done_slow(struct ablkcipher_walk *walk,
 		if (n == len_this_page)
 			break;
 		n -= len_this_page;
-		scatterwalk_start(&walk->out, scatterwalk_sg_next(walk->out.sg));
+		scatterwalk_start(&walk->out, sg_next(walk->out.sg));
 	}
 
 	return bsize;
@@ -118,11 +110,6 @@ int ablkcipher_walk_done(struct ablkcipher_request *req,
 {
 	struct crypto_tfm *tfm = req->base.tfm;
 	unsigned int nbytes = 0;
-
-#ifdef CONFIG_CRYPTO_FIPS
-	if (unlikely(in_fips_err()))
-		return -EACCES;
-#endif
 
 	if (likely(err >= 0)) {
 		unsigned int n = walk->nbytes - err;
@@ -298,6 +285,7 @@ static int ablkcipher_walk_first(struct ablkcipher_request *req,
 	walk->iv = req->info;
 	if (unlikely(((unsigned long)walk->iv & alignmask))) {
 		int err = ablkcipher_copy_iv(walk, tfm, alignmask);
+
 		if (err)
 			return err;
 	}
@@ -537,8 +525,7 @@ const char *crypto_default_geniv(const struct crypto_alg *alg)
 	    alg->cra_blocksize)
 		return "chainiv";
 
-	return alg->cra_flags & CRYPTO_ALG_ASYNC ?
-	       "eseqiv" : skcipher_default_geniv;
+	return "eseqiv";
 }
 
 static int crypto_givcipher_default(struct crypto_alg *alg, u32 type, u32 mask)
@@ -604,7 +591,8 @@ static int crypto_givcipher_default(struct crypto_alg *alg, u32 type, u32 mask)
 	if (IS_ERR(inst))
 		goto put_tmpl;
 
-	if ((err = crypto_register_instance(tmpl, inst))) {
+	err = crypto_register_instance(tmpl, inst);
+	if (err) {
 		tmpl->free(inst);
 		goto put_tmpl;
 	}
@@ -669,11 +657,6 @@ int crypto_grab_skcipher(struct crypto_skcipher_spawn *spawn, const char *name,
 	struct crypto_alg *alg;
 	int err;
 
-#ifdef CONFIG_CRYPTO_FIPS
-	if (unlikely(in_fips_err()))
-		return -EACCES;
-#endif
-
 	type = crypto_skcipher_type(type);
 	mask = crypto_skcipher_mask(mask);
 
@@ -715,7 +698,7 @@ struct crypto_ablkcipher *crypto_alloc_ablkcipher(const char *alg_name,
 err:
 		if (err != -EAGAIN)
 			break;
-		if (fatal_signal_pending(current)) {
+		if (signal_pending(current)) {
 			err = -EINTR;
 			break;
 		}
@@ -724,17 +707,3 @@ err:
 	return ERR_PTR(err);
 }
 EXPORT_SYMBOL_GPL(crypto_alloc_ablkcipher);
-
-static int __init skcipher_module_init(void)
-{
-	skcipher_default_geniv = num_possible_cpus() > 1 ?
-				 "eseqiv" : "chainiv";
-	return 0;
-}
-
-static void skcipher_module_exit(void)
-{
-}
-
-module_init(skcipher_module_init);
-module_exit(skcipher_module_exit);

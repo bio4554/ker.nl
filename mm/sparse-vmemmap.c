@@ -40,7 +40,8 @@ static void * __init_refok __earlyonly_bootmem_alloc(int node,
 				unsigned long align,
 				unsigned long goal)
 {
-	return __alloc_bootmem_node_high(NODE_DATA(node), size, align, goal);
+	return memblock_virt_alloc_try_nid(size, align, goal,
+					    BOOTMEM_ALLOC_ACCESSIBLE, node);
 }
 
 static void *vmemmap_buf;
@@ -125,24 +126,9 @@ pmd_t * __meminit vmemmap_pmd_populate(pud_t *pud, unsigned long addr, int node)
 
 pud_t * __meminit vmemmap_pud_populate(pgd_t *pgd, unsigned long addr, int node)
 {
-#ifdef CONFIG_TIMA_RKP
-	int rkp_do = 0; 
-#endif 	
-	void *p = NULL ;
 	pud_t *pud = pud_offset(pgd, addr);
 	if (pud_none(*pud)) {
-#ifdef CONFIG_TIMA_RKP
-#ifdef CONFIG_KNOX_KAP
-		if (boot_mode_security)  rkp_do = 1;
-#endif
-		if( rkp_do ){
-			p =  rkp_ro_alloc();
-		}else{
-			p = vmemmap_alloc_block(PAGE_SIZE, node);
-		}
-#else /* !CONFIG_TIMA_RKP */
-		p = vmemmap_alloc_block(PAGE_SIZE, node);
-#endif
+		void *p = vmemmap_alloc_block(PAGE_SIZE, node);
 		if (!p)
 			return NULL;
 		pud_populate(&init_mm, pud, p);
@@ -241,7 +227,8 @@ void __init sparse_mem_maps_populate_node(struct page **map_map,
 
 	if (vmemmap_buf_start) {
 		/* need to free left buf */
-		free_bootmem(__pa(vmemmap_buf), vmemmap_buf_end - vmemmap_buf);
+		memblock_free_early(__pa(vmemmap_buf),
+				    vmemmap_buf_end - vmemmap_buf);
 		vmemmap_buf = NULL;
 		vmemmap_buf_end = NULL;
 	}

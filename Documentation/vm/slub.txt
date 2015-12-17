@@ -117,7 +117,7 @@ can be influenced by kernel parameters:
 
 slub_min_objects=x		(default 4)
 slub_min_order=x		(default 0)
-slub_max_order=x		(default 0)
+slub_max_order=x		(default 3 (PAGE_ALLOC_COSTLY_ORDER))
 
 slub_min_objects allows to specify how many objects must at least fit
 into one slab in order for the allocation order to be acceptable.
@@ -251,10 +251,6 @@ terminating 0. That zero has overwritten the first byte of the Redzone field.
 After reporting the details of the issue encountered the FIX SLUB message
 tells us that SLUB has restored the Redzone to its proper value and then
 system operations continue.
-
-If it is required to only report the details of the issue and panic immediately
-after in order to possibly catch any scribblers one can set the
-CONFIG_DEBUG_SLUB_PANIC_ON option.
 
 Emergency operations:
 ---------------------

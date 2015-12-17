@@ -7,6 +7,7 @@
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/sched.h>
+#include <linux/sched_clock.h>
 #include <linux/interrupt.h>
 #include <linux/kernel_stat.h>
 #include <linux/param.h>
@@ -106,7 +107,7 @@ struct irqaction hub_rt_irqaction = {
 #define NSEC_PER_CYCLE		800
 #define CYCLES_PER_SEC		(NSEC_PER_SEC / NSEC_PER_CYCLE)
 
-void __cpuinit hub_rt_clock_event_init(void)
+void hub_rt_clock_event_init(void)
 {
 	unsigned int cpu = smp_processor_id();
 	struct clock_event_device *cd = &per_cpu(hub_rt_clockevent, cpu);
@@ -159,11 +160,18 @@ struct clocksource hub_rt_clocksource = {
 	.flags	= CLOCK_SOURCE_IS_CONTINUOUS,
 };
 
+static u64 notrace hub_rt_read_sched_clock(void)
+{
+	return REMOTE_HUB_L(cputonasid(0), PI_RT_COUNT);
+}
+
 static void __init hub_rt_clocksource_init(void)
 {
 	struct clocksource *cs = &hub_rt_clocksource;
 
 	clocksource_register_hz(cs, CYCLES_PER_SEC);
+
+	sched_clock_register(hub_rt_read_sched_clock, 52, CYCLES_PER_SEC);
 }
 
 void __init plat_time_init(void)
@@ -173,7 +181,7 @@ void __init plat_time_init(void)
 	hub_rt_clock_event_init();
 }
 
-void __cpuinit cpu_time_init(void)
+void cpu_time_init(void)
 {
 	lboard_t *board;
 	klcpu_t *cpu;
@@ -194,7 +202,7 @@ void __cpuinit cpu_time_init(void)
 	set_c0_status(SRB_TIMOCLK);
 }
 
-void __cpuinit hub_rtc_init(cnodeid_t cnode)
+void hub_rtc_init(cnodeid_t cnode)
 {
 
 	/*

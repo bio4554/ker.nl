@@ -90,7 +90,7 @@ static struct clocksource clocksource_metag = {
 
 static irqreturn_t metag_timer_interrupt(int irq, void *dummy)
 {
-	struct clock_event_device *evt = &__get_cpu_var(local_clockevent);
+	struct clock_event_device *evt = this_cpu_ptr(&local_clockevent);
 
 	evt->event_handler(evt);
 
@@ -184,6 +184,8 @@ int __init metag_generic_timer_init(void)
 #ifdef CONFIG_METAG_META21
 	hwtimer_freq = get_coreclock() / (metag_in32(EXPAND_TIMER_DIV) + 1);
 #endif
+	pr_info("Timer frequency: %u Hz\n", hwtimer_freq);
+
 	clocksource_register_hz(&clocksource_metag, hwtimer_freq);
 
 	setup_irq(tbisig_map(TBID_SIGNUM_TRT), &metag_timer_irq);

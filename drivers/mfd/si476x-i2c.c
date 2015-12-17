@@ -718,7 +718,7 @@ static int si476x_core_probe(struct i2c_client *client,
 	atomic_set(&core->is_alive, 0);
 	core->power_state = SI476X_POWER_DOWN;
 
-	pdata = client->dev.platform_data;
+	pdata = dev_get_platdata(&client->dev);
 	if (pdata) {
 		memcpy(&core->power_up_parameters,
 		       &pdata->power_up_parameters,
@@ -766,7 +766,7 @@ static int si476x_core_probe(struct i2c_client *client,
 			   sizeof(struct v4l2_rds_data),
 			   GFP_KERNEL);
 	if (rval) {
-		dev_err(&client->dev, "Could not alloate the FIFO\n");
+		dev_err(&client->dev, "Could not allocate the FIFO\n");
 		goto free_gpio;
 	}
 	mutex_init(&core->rds_drainer_status_lock);

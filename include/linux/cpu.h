@@ -6,9 +6,8 @@
  * definitions of processors.
  *
  * Basic handling of the devices is done in drivers/base/cpu.c
- * and system devices are handled in drivers/base/sys.c. 
  *
- * CPUs are exported via sysfs in the class/cpu/devices/
+ * CPUs are exported via sysfs in the devices/system/cpu
  * directory. 
  */
 #ifndef _LINUX_CPU_H_
@@ -20,6 +19,7 @@
 
 struct device;
 struct device_node;
+struct attribute_group;
 
 struct cpu {
 	int node_id;		/* The node which contains the CPU */
@@ -40,19 +40,15 @@ extern void cpu_remove_dev_attr(struct device_attribute *attr);
 extern int cpu_add_dev_attr_group(struct attribute_group *attrs);
 extern void cpu_remove_dev_attr_group(struct attribute_group *attrs);
 
+extern struct device *cpu_device_create(struct device *parent, void *drvdata,
+					const struct attribute_group **groups,
+					const char *fmt, ...);
 #ifdef CONFIG_HOTPLUG_CPU
 extern void unregister_cpu(struct cpu *cpu);
 extern ssize_t arch_cpu_probe(const char *, size_t);
 extern ssize_t arch_cpu_release(const char *, size_t);
 #endif
 struct notifier_block;
-
-#ifdef CONFIG_ARCH_HAS_CPU_AUTOPROBE
-extern int arch_cpu_uevent(struct device *dev, struct kobj_uevent_env *env);
-extern ssize_t arch_print_cpu_modalias(struct device *dev,
-				       struct device_attribute *attr,
-				       char *bufptr);
-#endif
 
 /*
  * CPU notifier priorities.
@@ -77,6 +73,7 @@ enum {
 	/* migration should happen before other stuff but after perf */
 	CPU_PRI_PERF		= 20,
 	CPU_PRI_MIGRATION	= 10,
+	CPU_PRI_SMPBOOT		= 9,
 	/* bring up workqueues before normal notifiers and down after */
 	CPU_PRI_WORKQUEUE_UP	= 5,
 	CPU_PRI_WORKQUEUE_DOWN	= -5,
@@ -99,6 +96,10 @@ enum {
 					* Called on the new cpu, just before
 					* enabling interrupts. Must not sleep,
 					* must not fail */
+#define CPU_DYING_IDLE		0x000B /* CPU (unsigned)v dying, reached
+					* idle loop. */
+#define CPU_BROKEN		0x000C /* CPU (unsigned)v did not die properly,
+					* perhaps due to preemption. */
 
 /* Used for CPU hotplug events occurring while tasks are frozen due to a suspend
  * operation in progress
@@ -119,13 +120,13 @@ enum {
 /* Need to know about CPUs going up/down? */
 #if defined(CONFIG_HOTPLUG_CPU) || !defined(MODULE)
 #define cpu_notifier(fn, pri) {					\
-	static struct notifier_block fn##_nb __cpuinitdata =	\
+	static struct notifier_block fn##_nb =			\
 		{ .notifier_call = fn, .priority = pri };	\
 	register_cpu_notifier(&fn##_nb);			\
 }
 
 #define __cpu_notifier(fn, pri) {				\
-	static struct notifier_block fn##_nb __cpuinitdata =	\
+	static struct notifier_block fn##_nb =			\
 		{ .notifier_call = fn, .priority = pri };	\
 	__register_cpu_notifier(&fn##_nb);			\
 }
@@ -165,6 +166,7 @@ static inline void __unregister_cpu_notifier(struct notifier_block *nb)
 }
 #endif
 
+void smpboot_thread_init(void);
 int cpu_up(unsigned int cpu);
 void notify_cpu_starting(unsigned int cpu);
 extern void cpu_maps_update_begin(void);
@@ -212,13 +214,20 @@ static inline void cpu_notifier_register_done(void)
 {
 }
 
+static inline void smpboot_thread_init(void)
+{
+}
+
 #endif /* CONFIG_SMP */
 extern struct bus_type cpu_subsys;
 
 #ifdef CONFIG_HOTPLUG_CPU
 /* Stop CPUs going up and down. */
 
+extern void cpu_hotplug_begin(void);
+extern void cpu_hotplug_done(void);
 extern void get_online_cpus(void);
+extern bool try_get_online_cpus(void);
 extern void put_online_cpus(void);
 extern void cpu_hotplug_disable(void);
 extern void cpu_hotplug_enable(void);
@@ -231,22 +240,12 @@ extern void cpu_hotplug_enable(void);
 void clear_tasks_mm_cpumask(int cpu);
 int cpu_down(unsigned int cpu);
 
-#ifdef CONFIG_ARCH_CPU_PROBE_RELEASE
-extern void cpu_hotplug_driver_lock(void);
-extern void cpu_hotplug_driver_unlock(void);
-#else
-static inline void cpu_hotplug_driver_lock(void)
-{
-}
-
-static inline void cpu_hotplug_driver_unlock(void)
-{
-}
-#endif
-
 #else		/* CONFIG_HOTPLUG_CPU */
 
+static inline void cpu_hotplug_begin(void) {}
+static inline void cpu_hotplug_done(void) {}
 #define get_online_cpus()	do { } while (0)
+#define try_get_online_cpus()	true
 #define put_online_cpus()	do { } while (0)
 #define cpu_hotplug_disable()	do { } while (0)
 #define cpu_hotplug_enable()	do { } while (0)
@@ -273,16 +272,24 @@ enum cpuhp_state {
 };
 
 void cpu_startup_entry(enum cpuhp_state state);
-void cpu_idle(void);
 
 void cpu_idle_poll_ctrl(bool enable);
-void per_cpu_idle_poll_ctrl(int cpu, bool enable);
 
 void arch_cpu_idle(void);
 void arch_cpu_idle_prepare(void);
 void arch_cpu_idle_enter(void);
 void arch_cpu_idle_exit(void);
 void arch_cpu_idle_dead(void);
+
+DECLARE_PER_CPU(bool, cpu_dead_idle);
+
+int cpu_report_state(int cpu);
+int cpu_check_up_prepare(int cpu);
+void cpu_set_state_online(int cpu);
+#ifdef CONFIG_HOTPLUG_CPU
+bool cpu_wait_death(unsigned int cpu, int seconds);
+bool cpu_report_death(void);
+#endif /* #ifdef CONFIG_HOTPLUG_CPU */
 
 #define IDLE_START 1
 #define IDLE_END 2

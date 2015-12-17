@@ -95,8 +95,8 @@ static int __init __reserved_mem_alloc_size(unsigned long node,
 	int t_len = (dt_root_addr_cells + dt_root_size_cells) * sizeof(__be32);
 	phys_addr_t start = 0, end = 0;
 	phys_addr_t base = 0, align = 0, size;
-	unsigned long len;
-	__be32 *prop;
+	int len;
+	const __be32 *prop;
 	int nomap;
 	int ret;
 
@@ -206,8 +206,8 @@ void __init fdt_init_reserved_mem(void)
 	for (i = 0; i < reserved_mem_count; i++) {
 		struct reserved_mem *rmem = &reserved_mem[i];
 		unsigned long node = rmem->fdt_node;
-		unsigned long len;
-		__be32 *prop;
+		int len;
+		const __be32 *prop;
 		int err = 0;
 
 		prop = of_get_flat_dt_prop(node, "phandle", &len);
@@ -243,24 +243,29 @@ static inline struct reserved_mem *__find_rmem(struct device_node *node)
  * This function assign memory region pointed by "memory-region" device tree
  * property to the given device.
  */
-void of_reserved_mem_device_init(struct device *dev)
+int of_reserved_mem_device_init(struct device *dev)
 {
 	struct reserved_mem *rmem;
 	struct device_node *np;
+	int ret;
 
 	np = of_parse_phandle(dev->of_node, "memory-region", 0);
 	if (!np)
-		return;
+		return -ENODEV;
 
 	rmem = __find_rmem(np);
 	of_node_put(np);
 
 	if (!rmem || !rmem->ops || !rmem->ops->device_init)
-		return;
+		return -EINVAL;
 
-	rmem->ops->device_init(rmem, dev);
-	dev_info(dev, "assigned reserved memory node %s\n", rmem->name);
+	ret = rmem->ops->device_init(rmem, dev);
+	if (ret == 0)
+		dev_info(dev, "assigned reserved memory node %s\n", rmem->name);
+
+	return ret;
 }
+EXPORT_SYMBOL_GPL(of_reserved_mem_device_init);
 
 /**
  * of_reserved_mem_device_release() - release reserved memory device structures
@@ -285,3 +290,4 @@ void of_reserved_mem_device_release(struct device *dev)
 
 	rmem->ops->device_release(rmem, dev);
 }
+EXPORT_SYMBOL_GPL(of_reserved_mem_device_release);

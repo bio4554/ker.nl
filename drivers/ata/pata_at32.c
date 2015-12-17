@@ -24,9 +24,9 @@
 #include <linux/libata.h>
 #include <linux/err.h>
 #include <linux/io.h>
-#include <linux/smc.h>
 
 #include <mach/board.h>
+#include <mach/smc.h>
 
 #define DRV_NAME "pata_at32"
 #define DRV_VERSION "0.0.3"
@@ -271,7 +271,7 @@ static int __init pata_at32_probe(struct platform_device *pdev)
 
 	struct device		 *dev = &pdev->dev;
 	struct at32_ide_info	 *info;
-	struct ide_platform_data *board = pdev->dev.platform_data;
+	struct ide_platform_data *board = dev_get_platdata(&pdev->dev);
 	struct resource		 *res;
 
 	int irq;
@@ -389,7 +389,6 @@ static struct platform_driver pata_at32_driver = {
 	.remove	       = __exit_p(pata_at32_remove),
 	.driver	       = {
 		.name  = "at32_ide",
-		.owner = THIS_MODULE,
 	},
 };
 

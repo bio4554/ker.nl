@@ -17,12 +17,9 @@
 #include <linux/stddef.h>
 #include <linux/unistd.h>
 #include <linux/user.h>
-#include <linux/delay.h>
-#include <linux/reboot.h>
 #include <linux/interrupt.h>
 #include <linux/kallsyms.h>
 #include <linux/init.h>
-#include <linux/cpu.h>
 #include <linux/elfcore.h>
 #include <linux/pm.h>
 #include <linux/tick.h>
@@ -30,18 +27,15 @@
 #include <linux/uaccess.h>
 #include <linux/random.h>
 #include <linux/hw_breakpoint.h>
-#include <linux/cpuidle.h>
 #include <linux/leds.h>
-#include <linux/console.h>
 
-#include <asm/cacheflush.h>
-#include <asm/idmap.h>
 #include <asm/processor.h>
 #include <asm/thread_notify.h>
 #include <asm/stacktrace.h>
+#include <asm/system_misc.h>
 #include <asm/mach/time.h>
-
-#include <mach/exynos-ss.h>
+#include <asm/tls.h>
+#include <asm/vdso.h>
 
 #ifdef CONFIG_CC_STACKPROTECTOR
 #include <linux/stackprotector.h>
@@ -49,121 +43,28 @@ unsigned long __stack_chk_guard __read_mostly;
 EXPORT_SYMBOL(__stack_chk_guard);
 #endif
 
-static const char *processor_modes[] = {
+static const char *processor_modes[] __maybe_unused = {
   "USER_26", "FIQ_26" , "IRQ_26" , "SVC_26" , "UK4_26" , "UK5_26" , "UK6_26" , "UK7_26" ,
   "UK8_26" , "UK9_26" , "UK10_26", "UK11_26", "UK12_26", "UK13_26", "UK14_26", "UK15_26",
-  "USER_32", "FIQ_32" , "IRQ_32" , "SVC_32" , "UK4_32" , "UK5_32" , "UK6_32" , "ABT_32" ,
-  "UK8_32" , "UK9_32" , "UK10_32", "UND_32" , "UK12_32", "UK13_32", "UK14_32", "SYS_32"
+  "USER_32", "FIQ_32" , "IRQ_32" , "SVC_32" , "UK4_32" , "UK5_32" , "MON_32" , "ABT_32" ,
+  "UK8_32" , "UK9_32" , "HYP_32", "UND_32" , "UK12_32", "UK13_32", "UK14_32", "SYS_32"
 };
 
-static const char *isa_modes[] = {
+static const char *isa_modes[] __maybe_unused = {
   "ARM" , "Thumb" , "Jazelle", "ThumbEE"
 };
 
 #ifdef CONFIG_SMP
-void arch_trigger_all_cpu_backtrace(void)
+void arch_trigger_all_cpu_backtrace(bool include_self)
 {
 	smp_send_all_cpu_backtrace();
 }
 #else
-void arch_trigger_all_cpu_backtrace(void)
+void arch_trigger_all_cpu_backtrace(bool include_self)
 {
 	dump_stack();
 }
 #endif
-
-extern void call_with_stack(void (*fn)(void *), void *arg, void *sp);
-typedef void (*phys_reset_t)(unsigned long);
-
-#ifdef CONFIG_ARM_FLUSH_CONSOLE_ON_RESTART
-void arm_machine_flush_console(void)
-{
-	printk("\n");
-	pr_emerg("Restarting %s\n", linux_banner);
-	if (console_trylock()) {
-		console_unlock();
-		return;
-	}
-
-	mdelay(50);
-
-	local_irq_disable();
-	if (!console_trylock())
-		pr_emerg("arm_restart: Console was locked! Busting\n");
-	else
-		pr_emerg("arm_restart: Console was locked!\n");
-	console_unlock();
-}
-#else
-void arm_machine_flush_console(void)
-{
-}
-#endif
-
-/*
- * A temporary stack to use for CPU reset. This is static so that we
- * don't clobber it with the identity mapping. When running with this
- * stack, any references to the current task *will not work* so you
- * should really do as little as possible before jumping to your reset
- * code.
- */
-static u64 soft_restart_stack[16];
-
-static void __soft_restart(void *addr)
-{
-	phys_reset_t phys_reset;
-
-	/* Take out a flat memory mapping. */
-	setup_mm_for_reboot();
-
-	/* Clean and invalidate caches */
-	flush_cache_all();
-
-	/* Turn off caching */
-	cpu_proc_fin();
-
-	/* Push out any further dirty data, and ensure cache is empty */
-	flush_cache_all();
-
-	/* Switch to the identity mapping. */
-	phys_reset = (phys_reset_t)(unsigned long)virt_to_phys(cpu_reset);
-	phys_reset((unsigned long)addr);
-
-	/* Should never get here. */
-	BUG();
-}
-
-void soft_restart(unsigned long addr)
-{
-	u64 *stack = soft_restart_stack + ARRAY_SIZE(soft_restart_stack);
-
-	/* Disable interrupts first */
-	local_irq_disable();
-	local_fiq_disable();
-
-	/* Disable the L2 if we're the last man standing. */
-	if (num_online_cpus() == 1)
-		outer_disable();
-
-	/* Change to the new stack and continue with the reset. */
-	call_with_stack(__soft_restart, (void *)addr, (void *)stack);
-
-	/* Should never get here. */
-	BUG();
-}
-
-static void null_restart(char mode, const char *cmd)
-{
-}
-
-/*
- * Function pointers to optional machine specific functions
- */
-void (*pm_power_off)(void);
-EXPORT_SYMBOL(pm_power_off);
-
-void (*arm_pm_restart)(char str, const char *cmd) = null_restart;
-EXPORT_SYMBOL_GPL(arm_pm_restart);
 
 /*
  * This is our default idle handler.
@@ -171,7 +72,11 @@ EXPORT_SYMBOL_GPL(arm_pm_restart);
 
 void (*arm_pm_idle)(void);
 
-static void default_idle(void)
+/*
+ * Called from the core idle loop.
+ */
+
+void arch_cpu_idle(void)
 {
 	if (arm_pm_idle)
 		arm_pm_idle();
@@ -206,109 +111,6 @@ void arch_cpu_idle_dead(void)
 	cpu_die();
 }
 #endif
-
-/*
- * Called from the core idle loop.
- */
-void arch_cpu_idle(void)
-{
-	if (cpuidle_idle_call())
-		default_idle();
-}
-
-static char reboot_mode = 'h';
-
-int __init reboot_setup(char *str)
-{
-	reboot_mode = str[0];
-	return 1;
-}
-
-__setup("reboot=", reboot_setup);
-
-/*
- * Called by kexec, immediately prior to machine_kexec().
- *
- * This must completely disable all secondary CPUs; simply causing those CPUs
- * to execute e.g. a RAM-based pin loop is not sufficient. This allows the
- * kexec'd kernel to use any and all RAM as it sees fit, without having to
- * avoid any code or data used by any SW CPU pin loop. The CPU hotplug
- * functionality embodied in disable_nonboot_cpus() to achieve this.
- */
-void machine_shutdown(void)
-{
-#ifdef CONFIG_SMP
-	/*
-	 * Disable preemption so we're guaranteed to
-	 * run to power off or reboot and prevent
-	 * the possibility of switching to another
-	 * thread that might wind up blocking on
-	 * one of the stopped CPUs.
-	 */
-	preempt_disable();
-#endif
-	disable_nonboot_cpus();
-}
-
-/*
- * Halting simply requires that the secondary CPUs stop performing any
- * activity (executing tasks, handling interrupts). smp_send_stop()
- * achieves this.
- */
-void machine_halt(void)
-{
-	local_irq_disable();
-	smp_send_stop();
-
-	local_irq_disable();
-	while (1);
-}
-
-/*
- * Power-off simply requires that the secondary CPUs stop performing any
- * activity (executing tasks, handling interrupts). smp_send_stop()
- * achieves this. When the system power is turned off, it will take all CPUs
- * with it.
- */
-void machine_power_off(void)
-{
-	local_irq_disable();
-	smp_send_stop();
-
-	if (pm_power_off)
-		pm_power_off();
-}
-
-/*
- * Restart requires that the secondary CPUs stop performing any activity
- * while the primary CPU resets the system. Systems with a single CPU can
- * use soft_restart() as their machine descriptor's .restart hook, since that
- * will cause the only available CPU to reset. Systems with multiple CPUs must
- * provide a HW restart implementation, to ensure that all CPUs reset at once.
- * This is required so that any code running after reset on the primary CPU
- * doesn't have to co-ordinate with other CPUs to ensure they aren't still
- * executing pre-reset code, and using RAM that the primary CPU's code wishes
- * to use. Implementing such co-ordination would be essentially impossible.
- */
-void machine_restart(char *cmd)
-{
-	local_irq_disable();
-	smp_send_stop();
-
-	/* Flush the console to make sure all the relevant messages make it
-	 * out to the console drivers */
-	arm_machine_flush_console();
-
-	arm_pm_restart(reboot_mode, cmd);
-
-	/* Give a grace period for failure to restart of 1s */
-	mdelay(1000);
-
-	/* Whoops - the platform was unable to reboot. Tell the user! */
-	printk("Reboot failed -- System halted\n");
-	local_irq_disable();
-	while (1);
-}
 
 /*
  * dump a block of kernel memory from around the given address
@@ -386,14 +188,6 @@ void __show_regs(struct pt_regs *regs)
 	unsigned long flags;
 	char buf[64];
 
-	exynos_ss_save_context(regs);
-	/*
-	 *  If you want to see more kernel events after panic,
-	 *  you should modify exynos_ss_set_enable's function 2nd parameter
-	 *  to true.
-	 */
-	exynos_ss_set_enable("log_kevents", false);
-	exynos_ss_early_dump();
 	show_regs_print_info(KERN_DEFAULT);
 
 	print_symbol("PC is at %s\n", instruction_pointer(regs));
@@ -419,12 +213,17 @@ void __show_regs(struct pt_regs *regs)
 	buf[3] = flags & PSR_V_BIT ? 'V' : 'v';
 	buf[4] = '\0';
 
+#ifndef CONFIG_CPU_V7M
 	printk("Flags: %s  IRQs o%s  FIQs o%s  Mode %s  ISA %s  Segment %s\n",
 		buf, interrupts_enabled(regs) ? "n" : "ff",
 		fast_interrupts_enabled(regs) ? "n" : "ff",
 		processor_modes[processor_mode(regs)],
 		isa_modes[isa_mode(regs)],
 		get_fs() == get_ds() ? "kernel" : "user");
+#else
+	printk("xPSR: %08lx\n", regs->ARM_cpsr);
+#endif
+
 #ifdef CONFIG_CPU_CP15
 	{
 		unsigned int ctrl;
@@ -437,7 +236,7 @@ void __show_regs(struct pt_regs *regs)
 			    "mrc p15, 0, %1, c3, c0\n"
 			    : "=r" (transbase), "=r" (dac));
 			snprintf(buf, sizeof(buf), "  Table: %08x  DAC: %08x",
-				transbase, dac);
+			  	transbase, dac);
 		}
 #endif
 		asm("mrc p15, 0, %0, c1, c0\n" : "=r" (ctrl));
@@ -446,42 +245,11 @@ void __show_regs(struct pt_regs *regs)
 	}
 #endif
 
-#ifdef CONFIG_CPU_CP15
-	{
-		unsigned long reg0, reg1, reg2, reg3;
-
-		asm ("mrc p15, 0, %0, c0, c0, 5\n": "=r" (reg0));
-		if (reg0 & (1 << 31))
-			/* MPIDR */
-			printk("CPU %ld / CLUSTER %ld\n",
-					reg0 & 0x3, (reg0 >> 8) & 0xF);
-
-		asm ("mrc p15, 0, %0, c5, c0, 0\n\t"
-		     "mrc p15, 0, %1, c5, c1, 0\n"
-		     : "=r" (reg0), "=r" (reg1));
-		asm ("mrc p15, 0, %0, c5, c0, 1\n\t"
-		     "mrc p15, 0, %1, c5, c1, 1\n"
-		     : "=r" (reg2), "=r" (reg3));
-		printk("DFSR: %08lx, ADFSR: %08lx, IFSR: %08lx, AIFSR: %08lx\n",
-			reg0, reg1, reg2, reg3);
-
-		asm ("mrc p15, 0, %0, c0, c0, 0\n": "=r" (reg0));
-		if (((reg0 >> 4) & 0xFFF) == 0xC0F) { /* Cortex-A15 */
-			asm ("mrrc p15, 0, %0, %1, c15\n\t"
-			     "mrrc p15, 1, %2, %3, c15\n"
-			     : "=r" (reg0), "=r" (reg1),
-			     "=r" (reg2), "=r" (reg3));
-			printk("CPUMERRSR: %08lx_%08lx, L2MERRSR: %08lx_%08lx\n",
-				reg1, reg0, reg3, reg2);
-		}
-	}
-#endif
 	show_extra_register_data(regs, 128);
 }
 
 void show_regs(struct pt_regs * regs)
 {
-	printk("\n");
 	__show_regs(regs);
 	dump_stack();
 }
@@ -508,6 +276,8 @@ void flush_thread(void)
 	memset(thread->used_cp, 0, sizeof(thread->used_cp));
 	memset(&tsk->thread.debug, 0, sizeof(struct debug_info));
 	memset(&thread->fpstate, 0, sizeof(union fp_state));
+
+	flush_tls();
 
 	thread_notify(THREAD_NOTIFY_FLUSH, thread);
 }
@@ -544,7 +314,8 @@ copy_thread(unsigned long clone_flags, unsigned long stack_start,
 	clear_ptrace_hw_breakpoint(p);
 
 	if (clone_flags & CLONE_SETTLS)
-		thread->tp_value = childregs->ARM_r3;
+		thread->tp_value[0] = childregs->ARM_r3;
+	thread->tp_value[1] = get_tpuser();
 
 	thread_notify(THREAD_NOTIFY_COPY, thread);
 
@@ -646,38 +417,91 @@ int in_gate_area_no_mm(unsigned long addr)
 
 const char *arch_vma_name(struct vm_area_struct *vma)
 {
-	return is_gate_vma(vma) ? "[vectors]" :
-		(vma->vm_mm && vma->vm_start == vma->vm_mm->context.sigpage) ?
-		 "[sigpage]" : NULL;
+	return is_gate_vma(vma) ? "[vectors]" : NULL;
+}
+
+/* If possible, provide a placement hint at a random offset from the
+ * stack for the sigpage and vdso pages.
+ */
+static unsigned long sigpage_addr(const struct mm_struct *mm,
+				  unsigned int npages)
+{
+	unsigned long offset;
+	unsigned long first;
+	unsigned long last;
+	unsigned long addr;
+	unsigned int slots;
+
+	first = PAGE_ALIGN(mm->start_stack);
+
+	last = TASK_SIZE - (npages << PAGE_SHIFT);
+
+	/* No room after stack? */
+	if (first > last)
+		return 0;
+
+	/* Just enough room? */
+	if (first == last)
+		return first;
+
+	slots = ((last - first) >> PAGE_SHIFT) + 1;
+
+	offset = get_random_int() % slots;
+
+	addr = first + (offset << PAGE_SHIFT);
+
+	return addr;
 }
 
 static struct page *signal_page;
 extern struct page *get_signal_page(void);
 
+static const struct vm_special_mapping sigpage_mapping = {
+	.name = "[sigpage]",
+	.pages = &signal_page,
+};
+
 int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
 {
 	struct mm_struct *mm = current->mm;
+	struct vm_area_struct *vma;
+	unsigned long npages;
 	unsigned long addr;
-	int ret;
+	unsigned long hint;
+	int ret = 0;
 
 	if (!signal_page)
 		signal_page = get_signal_page();
 	if (!signal_page)
 		return -ENOMEM;
 
+	npages = 1; /* for sigpage */
+	npages += vdso_total_pages;
+
 	down_write(&mm->mmap_sem);
-	addr = get_unmapped_area(NULL, 0, PAGE_SIZE, 0, 0);
+	hint = sigpage_addr(mm, npages);
+	addr = get_unmapped_area(NULL, hint, npages << PAGE_SHIFT, 0, 0);
 	if (IS_ERR_VALUE(addr)) {
 		ret = addr;
 		goto up_fail;
 	}
 
-	ret = install_special_mapping(mm, addr, PAGE_SIZE,
+	vma = _install_special_mapping(mm, addr, PAGE_SIZE,
 		VM_READ | VM_EXEC | VM_MAYREAD | VM_MAYWRITE | VM_MAYEXEC,
-		&signal_page);
+		&sigpage_mapping);
 
-	if (ret == 0)
-		mm->context.sigpage = addr;
+	if (IS_ERR(vma)) {
+		ret = PTR_ERR(vma);
+		goto up_fail;
+	}
+
+	mm->context.sigpage = addr;
+
+	/* Unlike the sigpage, failure to install the vdso is unlikely
+	 * to be fatal to the process, so no error check needed
+	 * here.
+	 */
+	arm_install_vdso(mm, addr + PAGE_SIZE);
 
  up_fail:
 	up_write(&mm->mmap_sem);

@@ -153,15 +153,13 @@ struct input_keymap_entry {
 
 #define EVIOCGRAB		_IOW('E', 0x90, int)			/* Grab/Release device */
 
+/* HACK: disable conflicting EVIOCREVOKE until Android userspace stops using EVIOCSSUSPENDBLOCK */
+/*#define EVIOCREVOKE		_IOW('E', 0x91, int)*/			/* Revoke device access */
+
 #define EVIOCGSUSPENDBLOCK	_IOR('E', 0x91, int)			/* get suspend block enable */
 #define EVIOCSSUSPENDBLOCK	_IOW('E', 0x91, int)			/* set suspend block enable */
 
 #define EVIOCSCLOCKID		_IOW('E', 0xa0, int)			/* Set clockid to be used for timestamps */
-
-#ifdef CONFIG_INPUT_EXPANDED_ABS
-#define EVIOCGABS_LIMIT		(0x40)
-#define EVIOCGABS_CHG_LIMIT(nr)	(nr + EVIOCGABS_LIMIT)
-#endif
 
 /*
  * Device properties and quirks
@@ -171,6 +169,9 @@ struct input_keymap_entry {
 #define INPUT_PROP_DIRECT		0x01	/* direct input devices */
 #define INPUT_PROP_BUTTONPAD		0x02	/* has button(s) under pad */
 #define INPUT_PROP_SEMI_MT		0x03	/* touch rectangle only */
+#define INPUT_PROP_TOPBUTTONPAD		0x04	/* softbuttons at top of pad */
+#define INPUT_PROP_POINTING_STICK	0x05	/* is a pointing stick */
+#define INPUT_PROP_ACCELEROMETER	0x06	/* has accelerometer */
 
 #define INPUT_PROP_MAX			0x1f
 #define INPUT_PROP_CNT			(INPUT_PROP_MAX + 1)
@@ -191,9 +192,6 @@ struct input_keymap_entry {
 #define EV_FF			0x15
 #define EV_PWR			0x16
 #define EV_FF_STATUS		0x17
-#ifdef CONFIG_VT_TKEY_SKIP_MATCH
-#define EV_TOUCHKEY		0x18
-#endif
 #define EV_MAX			0x1f
 #define EV_CNT			(EV_MAX+1)
 
@@ -205,6 +203,8 @@ struct input_keymap_entry {
 #define SYN_CONFIG		1
 #define SYN_MT_REPORT		2
 #define SYN_DROPPED		3
+#define SYN_MAX			0xf
+#define SYN_CNT			(SYN_MAX+1)
 
 /*
  * Keys and buttons
@@ -374,7 +374,8 @@ struct input_keymap_entry {
 #define KEY_MSDOS		151
 #define KEY_COFFEE		152	/* AL Terminal Lock/Screensaver */
 #define KEY_SCREENLOCK		KEY_COFFEE
-#define KEY_DIRECTION		153
+#define KEY_ROTATE_DISPLAY	153	/* Display orientation for e.g. tablets */
+#define KEY_DIRECTION		KEY_ROTATE_DISPLAY
 #define KEY_CYCLEWINDOWS	154
 #define KEY_MAIL		155
 #define KEY_BOOKMARKS		156	/* AC Bookmarks */
@@ -417,8 +418,6 @@ struct input_keymap_entry {
 #define KEY_F22			192
 #define KEY_F23			193
 #define KEY_F24			194
-#define KEY_LPSD_WAKEUP		198
-#define KEY_VOICE_WAKEUP	199
 
 #define KEY_PLAYCD		200
 #define KEY_PAUSECD		201
@@ -483,15 +482,6 @@ struct input_keymap_entry {
 
 #define KEY_MICMUTE		248	/* Mute / unmute the microphone */
 
-/* Dummy touchkey code */
-#define KEY_DUMMY_HOME1		249
-#define KEY_DUMMY_HOME2		250
-#define KEY_DUMMY_MENU		251
-#define KEY_DUMMY_HOME		252
-#define KEY_DUMMY_BACK		253
-
-#define KEY_RECENT   254
-
 /* Code 255 is reserved for special needs of AT keyboard driver */
 
 #define BTN_MISC		0x100
@@ -551,7 +541,6 @@ struct input_keymap_entry {
 #define BTN_MODE		0x13c
 #define BTN_THUMBL		0x13d
 #define BTN_THUMBR		0x13e
-#define BTN_GAME		0x13f
 
 #define BTN_DIGI		0x140
 #define BTN_TOOL_PEN		0x140
@@ -573,11 +562,6 @@ struct input_keymap_entry {
 #define BTN_WHEEL		0x150
 #define BTN_GEAR_DOWN		0x150
 #define BTN_GEAR_UP		0x151
-
-#define BTN_3FIN_UP			0x155
-#define BTN_3FIN_DOWN		0x156
-#define BTN_3FIN_LEFT		0x157
-#define BTN_3FIN_RIGHT		0x158
 
 #define KEY_OK			0x160
 #define KEY_SELECT		0x161
@@ -678,11 +662,6 @@ struct input_keymap_entry {
 #define KEY_DEL_EOS		0x1c1
 #define KEY_INS_LINE		0x1c2
 #define KEY_DEL_LINE		0x1c3
-#define KEY_SIDE_GESTURE	0x1c6
-#define KEY_BLACK_UI_GESTURE	0x1c7
-
-#define KEY_SIDE_GESTURE_RIGHT	0x1ca
-#define KEY_SIDE_GESTURE_LEFT	0x1cb
 
 #define KEY_FN			0x1d0
 #define KEY_FN_ESC		0x1d1
@@ -729,6 +708,10 @@ struct input_keymap_entry {
 #define KEY_NUMERIC_9		0x209
 #define KEY_NUMERIC_STAR	0x20a
 #define KEY_NUMERIC_POUND	0x20b
+#define KEY_NUMERIC_A		0x20c	/* Phone key A - HUT Telephony 0xb9 */
+#define KEY_NUMERIC_B		0x20d
+#define KEY_NUMERIC_C		0x20e
+#define KEY_NUMERIC_D		0x20f
 
 #define KEY_CAMERA_FOCUS	0x210
 #define KEY_WPS_BUTTON		0x211	/* WiFi Protected Setup key */
@@ -766,6 +749,13 @@ struct input_keymap_entry {
 
 #define KEY_BRIGHTNESS_MIN		0x250	/* Set Brightness to Minimum */
 #define KEY_BRIGHTNESS_MAX		0x251	/* Set Brightness to Maximum */
+
+#define KEY_KBDINPUTASSIST_PREV		0x260
+#define KEY_KBDINPUTASSIST_NEXT		0x261
+#define KEY_KBDINPUTASSIST_PREVGROUP		0x262
+#define KEY_KBDINPUTASSIST_NEXTGROUP		0x263
+#define KEY_KBDINPUTASSIST_ACCEPT		0x264
+#define KEY_KBDINPUTASSIST_CANCEL		0x265
 
 #define BTN_TRIGGER_HAPPY		0x2c0
 #define BTN_TRIGGER_HAPPY1		0x2c0
@@ -808,13 +798,6 @@ struct input_keymap_entry {
 #define BTN_TRIGGER_HAPPY38		0x2e5
 #define BTN_TRIGGER_HAPPY39		0x2e6
 #define BTN_TRIGGER_HAPPY40		0x2e7
-
-#ifdef CONFIG_USB_HMT_SAMSUNG_INPUT
-#define KEY_START_NOTA_CMD		0x2fc
-#define KEY_START_TA_CMD		0x2fd
-#define KEY_ONGOING_TA_CMD		0x2fe
-#define KEY_HMT_CMD_START		KEY_START_NOTA_CMD
-#endif
 
 /* We avoid low common keys in module aliases so they don't get huge. */
 #define KEY_MIN_INTERESTING	KEY_MUTE
@@ -887,18 +870,8 @@ struct input_keymap_entry {
 #define ABS_MT_TOOL_X		0x3c	/* Center X tool position */
 #define ABS_MT_TOOL_Y		0x3d	/* Center Y tool position */
 
-#ifdef CONFIG_INPUT_EXPANDED_ABS
-#define ABS_MT_PALM		0x40	/* palm touch */
-#define ABS_MT_GRIP		0x41	/* grip touch */
-
-#define ABS_MAX			0x4f
-#else
-#define ABS_MT_PALM		0x3e	/* palm touch */
-#define ABS_MT_GRIP		0x3f	/* grip touch */
 
 #define ABS_MAX			0x3f
-#endif
-
 #define ABS_CNT			(ABS_MAX+1)
 
 /*
@@ -922,11 +895,7 @@ struct input_keymap_entry {
 #define SW_ROTATE_LOCK		0x0c  /* set = rotate locked/disabled */
 #define SW_LINEIN_INSERT	0x0d  /* set = inserted */
 #define SW_MUTE_DEVICE		0x0e  /* set = device disabled */
-#define SW_GLOVE		0x0f	/* set = glove mode */
-#define SW_PEN_INSERT		0x13	/* set = pen out */
-#define SW_FLIP                 0x15    /* set = flip cover */
-#define	SW_CERTIFYHALL		0x1b	/* set = certify_hall... */
-#define SW_MAX			0x20
+#define SW_MAX			0x0f
 #define SW_CNT			(SW_MAX+1)
 
 /*
@@ -1014,7 +983,8 @@ struct input_keymap_entry {
  */
 #define MT_TOOL_FINGER		0
 #define MT_TOOL_PEN		1
-#define MT_TOOL_MAX		1
+#define MT_TOOL_PALM		2
+#define MT_TOOL_MAX		2
 
 /*
  * Values describing the status of a force-feedback effect

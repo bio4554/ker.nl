@@ -147,7 +147,7 @@ static cpumask_t cpuidle_coupled_poked;
  * has returned from this function, the barrier is immediately available for
  * reuse.
  *
- * The atomic variable a must be initialized to 0 before any cpu calls
+ * The atomic variable must be initialized to 0 before any cpu calls
  * this function, will be reset to 0 before any cpu returns from this function.
  *
  * Must only be called from within a coupled idle state handler
@@ -292,7 +292,7 @@ static inline int cpuidle_coupled_get_state(struct cpuidle_device *dev,
 	 */
 	smp_rmb();
 
-	for_each_cpu_mask(i, coupled->coupled_cpus)
+	for_each_cpu(i, &coupled->coupled_cpus)
 		if (cpu_online(i) && coupled->requested_state[i] < state)
 			state = coupled->requested_state[i];
 
@@ -323,7 +323,7 @@ static void cpuidle_coupled_poke(int cpu)
 	struct call_single_data *csd = &per_cpu(cpuidle_coupled_poke_cb, cpu);
 
 	if (!cpumask_test_and_set_cpu(cpu, &cpuidle_coupled_poke_pending))
-		__smp_call_function_single(cpu, csd, 0);
+		smp_call_function_single_async(cpu, csd);
 }
 
 /**
@@ -338,7 +338,7 @@ static void cpuidle_coupled_poke_others(int this_cpu,
 {
 	int cpu;
 
-	for_each_cpu_mask(cpu, coupled->coupled_cpus)
+	for_each_cpu(cpu, &coupled->coupled_cpus)
 		if (cpu != this_cpu && cpu_online(cpu))
 			cpuidle_coupled_poke(cpu);
 }
@@ -474,6 +474,7 @@ int cpuidle_enter_state_coupled(struct cpuidle_device *dev,
 		}
 		entered_state = cpuidle_enter_state(dev, drv,
 			dev->safe_state_index);
+		local_irq_disable();
 	}
 
 	/* Read barrier ensures online_count is read after prevent is cleared */
@@ -521,6 +522,7 @@ retry:
 
 		entered_state = cpuidle_enter_state(dev, drv,
 			dev->safe_state_index);
+		local_irq_disable();
 	}
 
 	cpuidle_coupled_clear_pokes(dev->cpu);
@@ -636,7 +638,7 @@ int cpuidle_coupled_register_device(struct cpuidle_device *dev)
 	if (cpumask_empty(&dev->coupled_cpus))
 		return 0;
 
-	for_each_cpu_mask(cpu, dev->coupled_cpus) {
+	for_each_cpu(cpu, &dev->coupled_cpus) {
 		other_dev = per_cpu(cpuidle_devices, cpu);
 		if (other_dev && other_dev->coupled) {
 			coupled = other_dev->coupled;

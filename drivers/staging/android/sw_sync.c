@@ -40,9 +40,6 @@ struct sync_pt *sw_sync_pt_create(struct sw_sync_timeline *obj, u32 value)
 	pt = (struct sw_sync_pt *)
 		sync_pt_create(&obj->obj, sizeof(struct sw_sync_pt));
 
-	if (!pt)
-		return NULL;
-
 	pt->value = value;
 
 	return (struct sync_pt *)pt;
@@ -51,18 +48,18 @@ EXPORT_SYMBOL(sw_sync_pt_create);
 
 static struct sync_pt *sw_sync_pt_dup(struct sync_pt *sync_pt)
 {
-	struct sw_sync_pt *pt = (struct sw_sync_pt *) sync_pt;
+	struct sw_sync_pt *pt = (struct sw_sync_pt *)sync_pt;
 	struct sw_sync_timeline *obj =
-		(struct sw_sync_timeline *)sync_pt->parent;
+		(struct sw_sync_timeline *)sync_pt_parent(sync_pt);
 
-	return (struct sync_pt *) sw_sync_pt_create(obj, pt->value);
+	return (struct sync_pt *)sw_sync_pt_create(obj, pt->value);
 }
 
 static int sw_sync_pt_has_signaled(struct sync_pt *sync_pt)
 {
 	struct sw_sync_pt *pt = (struct sw_sync_pt *)sync_pt;
 	struct sw_sync_timeline *obj =
-		(struct sw_sync_timeline *)sync_pt->parent;
+		(struct sw_sync_timeline *)sync_pt_parent(sync_pt);
 
 	return sw_sync_cmp(obj->value, pt->value) >= 0;
 }
@@ -97,7 +94,7 @@ static void sw_sync_timeline_value_str(struct sync_timeline *sync_timeline,
 }
 
 static void sw_sync_pt_value_str(struct sync_pt *sync_pt,
-				       char *str, int size)
+				 char *str, int size)
 {
 	struct sw_sync_pt *pt = (struct sw_sync_pt *)sync_pt;
 
@@ -113,7 +110,6 @@ static struct sync_timeline_ops sw_sync_timeline_ops = {
 	.timeline_value_str = sw_sync_timeline_value_str,
 	.pt_value_str = sw_sync_pt_value_str,
 };
-
 
 struct sw_sync_timeline *sw_sync_timeline_create(const char *name)
 {
@@ -165,9 +161,10 @@ static int sw_sync_release(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static long sw_sync_ioctl_create_fence(struct sw_sync_timeline *obj, unsigned long arg)
+static long sw_sync_ioctl_create_fence(struct sw_sync_timeline *obj,
+				       unsigned long arg)
 {
-	int fd = get_unused_fd();
+	int fd = get_unused_fd_flags(O_CLOEXEC);
 	int err;
 	struct sync_pt *pt;
 	struct sync_fence *fence;
@@ -223,7 +220,8 @@ static long sw_sync_ioctl_inc(struct sw_sync_timeline *obj, unsigned long arg)
 	return 0;
 }
 
-static long sw_sync_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+static long sw_sync_ioctl(struct file *file, unsigned int cmd,
+			  unsigned long arg)
 {
 	struct sw_sync_timeline *obj = file->private_data;
 

@@ -104,6 +104,31 @@
 				   S3C2410_UCON_RXIRQMODE | \
 				   S3C2410_UCON_RXFIFO_TOI)
 
+#define S3C64XX_UCON_TXBURST_1          (0<<20)
+#define S3C64XX_UCON_TXBURST_4          (1<<20)
+#define S3C64XX_UCON_TXBURST_8          (2<<20)
+#define S3C64XX_UCON_TXBURST_16         (3<<20)
+#define S3C64XX_UCON_TXBURST_MASK       (0xf<<20)
+#define S3C64XX_UCON_RXBURST_1          (0<<16)
+#define S3C64XX_UCON_RXBURST_4          (1<<16)
+#define S3C64XX_UCON_RXBURST_8          (2<<16)
+#define S3C64XX_UCON_RXBURST_16         (3<<16)
+#define S3C64XX_UCON_RXBURST_MASK       (0xf<<16)
+#define S3C64XX_UCON_TIMEOUT_SHIFT      (12)
+#define S3C64XX_UCON_TIMEOUT_MASK       (0xf<<12)
+#define S3C64XX_UCON_EMPTYINT_EN        (1<<11)
+#define S3C64XX_UCON_DMASUS_EN          (1<<10)
+#define S3C64XX_UCON_TXINT_LEVEL        (1<<9)
+#define S3C64XX_UCON_RXINT_LEVEL        (1<<8)
+#define S3C64XX_UCON_TIMEOUT_EN         (1<<7)
+#define S3C64XX_UCON_ERRINT_EN          (1<<6)
+#define S3C64XX_UCON_TXMODE_DMA         (2<<2)
+#define S3C64XX_UCON_TXMODE_CPU         (1<<2)
+#define S3C64XX_UCON_TXMODE_MASK        (3<<2)
+#define S3C64XX_UCON_RXMODE_DMA         (2<<0)
+#define S3C64XX_UCON_RXMODE_CPU         (1<<0)
+#define S3C64XX_UCON_RXMODE_MASK        (3<<0)
+
 #define S3C2410_UFCON_FIFOMODE	  (1<<0)
 #define S3C2410_UFCON_TXTRIG0	  (0<<6)
 #define S3C2410_UFCON_RXTRIG8	  (1<<4)
@@ -155,6 +180,7 @@
 #define S3C2440_UFSTAT_TXMASK	  (63<<8)
 #define S3C2440_UFSTAT_RXMASK	  (63)
 
+#define S3C2410_UTRSTAT_TIMEOUT   (1<<3)
 #define S3C2410_UTRSTAT_TXE	  (1<<2)
 #define S3C2410_UTRSTAT_TXFE	  (1<<1)
 #define S3C2410_UTRSTAT_RXDR	  (1<<0)
@@ -179,43 +205,11 @@
 #define S3C64XX_UINTM		0x38
 
 #define S3C64XX_UINTM_RXD	(0)
-#define S3C64XX_UINTM_ERR	(1)
+#define S3C64XX_UINTM_ERROR     (1)
 #define S3C64XX_UINTM_TXD	(2)
 #define S3C64XX_UINTM_RXD_MSK	(1 << S3C64XX_UINTM_RXD)
-#define S3C64XX_UINTM_ERR_MSK	(1 << S3C64XX_UINTM_ERR)
+#define S3C64XX_UINTM_ERR_MSK   (1 << S3C64XX_UINTM_ERROR)
 #define S3C64XX_UINTM_TXD_MSK	(1 << S3C64XX_UINTM_TXD)
-
-/* Following are specific to EXYNOS5 */
-#define EXYNOS5_UCON_TXBURST_SZ         (20)
-#define EXYNOS5_UCON_RXBURST_SZ         (16)
-#define EXYNOS5_UCON_TIMEOUT_VAL        (12)
-#define EXYNOS5_UCON_EMPTYINT_EN        (11)
-#define EXYNOS5_UCON_DMASUS_EN          (10)
-#define EXYNOS5_UCON_TIMEOUT_EN         (7)
-#define EXYNOS5_UCON_TXDMA_MODE         (2<<2)
-#define EXYNOS5_UCON_TXCPU_MODE         (1<<2)
-#define EXYNOS5_UCON_RXDMA_MODE         (2<<0)
-#define EXYNOS5_UCON_RXCPU_MODE         (1<<0)
-#define EXYNOS5_UCON_TXMODE_CL          (3<<2)
-#define EXYNOS5_UCON_RXMODE_CL          (3<<0)
-
-#define EXYNOS5_UTRSTAT_TIMEOUT         (1<<3)
-
-/* Following are specific to DMA MODE */
-#define UCON_TXBURST_SZ         EXYNOS5_UCON_TXBURST_SZ
-#define UCON_RXBURST_SZ         EXYNOS5_UCON_RXBURST_SZ
-#define UCON_TIMEOUT_VAL        EXYNOS5_UCON_TIMEOUT_VAL
-#define UCON_EMPTYINT_EN        EXYNOS5_UCON_EMPTYINT_EN
-#define UCON_DMASUS_EN          EXYNOS5_UCON_DMASUS_EN
-#define UCON_TIMEOUT_EN         EXYNOS5_UCON_TIMEOUT_EN
-#define UCON_TXDMA_MODE         EXYNOS5_UCON_TXDMA_MODE
-#define UCON_TXCPU_MODE         EXYNOS5_UCON_TXCPU_MODE
-#define UCON_RXDMA_MODE         EXYNOS5_UCON_RXDMA_MODE
-#define UCON_RXCPU_MODE         EXYNOS5_UCON_RXCPU_MODE
-#define UCON_TXMODE_CL          EXYNOS5_UCON_TXMODE_CL
-#define UCON_RXMODE_CL          EXYNOS5_UCON_RXMODE_CL
-
-#define UTRSTAT_TIMEOUT         EXYNOS5_UTRSTAT_TIMEOUT
 
 /* Following are specific to S5PV210 */
 #define S5PV210_UCON_CLKMASK	(1<<10)
@@ -267,7 +261,7 @@
 
 #ifndef __ASSEMBLY__
 
-struct uart_port;
+#include <linux/serial_core.h>
 
 /* configuration structure for per-machine configurations for the
  * serial port
@@ -275,9 +269,6 @@ struct uart_port;
  * the pointer is setup by the machine specific initialisation from the
  * arch/arm/mach-s3c2410/ directory.
 */
-
-typedef void (*s3c_wake_peer_t)(struct uart_port *port);
-extern s3c_wake_peer_t s3c2410_serial_wake_peer[CONFIG_SERIAL_SAMSUNG_UARTS];
 
 struct s3c2410_uartcfg {
 	unsigned char	   hwport;	 /* hardware port number */
@@ -291,8 +282,6 @@ struct s3c2410_uartcfg {
 	unsigned long	   ucon;	 /* value of ucon for port */
 	unsigned long	   ulcon;	 /* value of ulcon for port */
 	unsigned long	   ufcon;	 /* value of ufcon for port */
-
-	s3c_wake_peer_t wake_peer[CONFIG_SERIAL_SAMSUNG_UARTS];
 };
 
 #endif /* __ASSEMBLY__ */

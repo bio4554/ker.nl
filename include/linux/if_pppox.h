@@ -19,6 +19,7 @@
 #include <linux/netdevice.h>
 #include <linux/ppp_channel.h>
 #include <linux/skbuff.h>
+#include <linux/workqueue.h>
 #include <uapi/linux/if_pppox.h>
 
 static inline struct pppoe_hdr *pppoe_hdr(const struct sk_buff *skb)
@@ -32,6 +33,7 @@ struct pppoe_opt {
 	struct pppoe_addr	pa;	  /* what this socket is bound to*/
 	struct sockaddr_pppox	relay;	  /* what socket data will be
 					     relayed to (PPPoE relaying) */
+	struct work_struct      padt_work;/* Work item for handling PADT */
 };
 
 struct pptp_opt {
@@ -56,9 +58,8 @@ struct pppopns_opt {
 	__u16		remote;
 	__u32		recv_sequence;
 	__u32		xmit_sequence;
-	void		(*data_ready)(struct sock *sk_raw, int length);
+	void		(*data_ready)(struct sock *sk_raw);
 	int		(*backlog_rcv)(struct sock *sk_raw, struct sk_buff *skb);
-	int 		ppp_flags;
 };
 
 #include <net/sock.h>
@@ -74,8 +75,6 @@ struct pppox_sock {
 		struct pppolac_opt lac;
 		struct pppopns_opt pns;
 	} proto;
-	struct timer_list recv_queue_timer;
-	spinlock_t recv_queue_lock;
 	__be16			num;
 };
 #define pppoe_dev	proto.pppoe.dev

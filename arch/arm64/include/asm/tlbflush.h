@@ -24,11 +24,6 @@
 #include <linux/sched.h>
 #include <asm/cputype.h>
 
-extern void __cpu_flush_user_tlb_range(unsigned long, unsigned long, struct vm_area_struct *);
-extern void __cpu_flush_kern_tlb_range(unsigned long, unsigned long);
-
-extern struct cpu_tlb_fns cpu_tlb;
-
 /*
  *	TLB Management
  *	==============
@@ -149,14 +144,27 @@ static inline void flush_tlb_kernel_range(unsigned long start, unsigned long end
 }
 
 /*
+ * Used to invalidate the TLB (walk caches) corresponding to intermediate page
+ * table levels (pgd/pud/pmd).
+ */
+static inline void __flush_tlb_pgtable(struct mm_struct *mm,
+				       unsigned long uaddr)
+{
+	unsigned long addr = uaddr >> 12 | ((unsigned long)ASID(mm) << 48);
+
+	dsb(ishst);
+	asm("tlbi	vae1is, %0" : : "r" (addr));
+	dsb(ish);
+}
+/*
  * On AArch64, the cache coherency is handled via the set_pte_at() function.
  */
 static inline void update_mmu_cache(struct vm_area_struct *vma,
 				    unsigned long addr, pte_t *ptep)
 {
 	/*
-	 * set_pte() does not have a DSB, so make sure that the page table
-	 * write is visible.
+	 * set_pte() does not have a DSB for user mappings, so make sure that
+	 * the page table write is visible.
 	 */
 	dsb(ishst);
 }

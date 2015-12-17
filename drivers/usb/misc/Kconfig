@@ -82,7 +82,7 @@ config USB_LCD
 config USB_LED
 	tristate "USB LED driver support"
 	help
-	  Say Y here if you want to connect an USBLED device to your
+	  Say Y here if you want to connect an USBLED device to your 
 	  computer's USB port.
 
 	  To compile this driver as a module, choose M here: the
@@ -107,7 +107,7 @@ config USB_CYTHERM
 	  Say Y here if you want to connect a Cypress USB thermometer
 	  device to your computer's USB port. This device is also known
 	  as the Cypress USB Starter kit or demo board. The Elektor
-	  magazine published a modified version of this device in issue
+	  magazine published a modified version of this device in issue 
 	  #291.
 
 	  To compile this driver as a module, choose M here: the
@@ -128,7 +128,6 @@ config USB_IDMOUSE
 
 config USB_FTDI_ELAN
 	tristate "Elan PCMCIA CardBus Adapter USB Client"
-	default M
 	help
 	  ELAN's Uxxx series of adapters are USB to PCMCIA CardBus adapters.
 	  Currently only the U132 adapter is available.
@@ -200,6 +199,19 @@ config USB_TEST
 	  See <http://www.linux-usb.org/usbtest/> for more information,
 	  including sample test device firmware and "how to use it".
 
+config USB_EHSET_TEST_FIXTURE
+        tristate "USB EHSET Test Fixture driver"
+        help
+	  Say Y here if you want to support the special test fixture device
+	  used for the USB-IF Embedded Host High-Speed Electrical Test procedure.
+
+	  When the test fixture is connected, it can enumerate as one of several
+	  VID/PID pairs. This driver then initiates a corresponding test mode on
+	  the downstream port to which the test fixture is attached.
+
+	  See <http://www.usb.org/developers/onthego/EHSET_v1.01.pdf> for more
+	  information.
+
 config USB_ISIGHTFW
 	tristate "iSight firmware loading support"
 	select FW_LOADER
@@ -233,68 +245,26 @@ config USB_EZUSB_FX2
 config USB_HSIC_USB3503
        tristate "USB3503 HSIC to USB20 Driver"
        depends on I2C
+       select REGMAP_I2C
        help
          This option enables support for SMSC USB3503 HSIC to USB 2.0 Driver.
 
-config USB_EXYNOS_SWITCH
-	bool "EXYNOS USB SWITCH driver"
-	depends on USB_S3C_OTGD || USB_EHCI_S5P || USB_OHCI_EXYNOS
-	depends on PM_RUNTIME
+config USB_LINK_LAYER_TEST
+	tristate "USB Link Layer Test driver"
 	help
-	  This driver implements USB2.0 host <-> device switch functionality
-	  for Samsung Exynos series of SoCs.
+	  This driver is for generating specific traffic for Super Speed Link
+	  Layer Test Device. Say Y only when you want to conduct USB Super Speed
+	  Link Layer Test for host controllers.
 
-config USB_QCOM_DIAG_BRIDGE
-	tristate "USB Qualcomm diagnostic bridge driver"
-	depends on USB
+config USB_CHAOSKEY
+	tristate "ChaosKey random number generator driver support"
+	depends on HW_RANDOM
 	help
-	  Say Y here if you have a Qualcomm modem device connected via USB that
-	  will be bridged in kernel space. This driver communicates with the
-	  diagnostic interface and allows for bridging with the diag forwarding
-	  driver.
+	  Say Y here if you want to connect an AltusMetrum ChaosKey to
+	  your computer's USB port. The ChaosKey is a hardware random
+	  number generator which hooks into the kernel entropy pool to
+	  ensure a large supply of entropy for /dev/random and
+	  /dev/urandom and also provides direct access via /dev/chaoskeyX
 
 	  To compile this driver as a module, choose M here: the
-	  module will be called diag_bridge.  If unsure, choose N.
-
-config USB_QCOM_DIAG_BRIDGE_TEST
-	tristate "USB Qualcomm diagnostic bridge driver test"
-	depends on USB && USB_QCOM_DIAG_BRIDGE
-	help
-	  Say Y here if you want to enable the test hook for the
-	  Qualcomm diag bridge driver. When enabled, this will create
-	  a debugfs file entry named "diag_bridge_test" which can be used
-	  to send a ping command to the diag port of the modem over USB.
-
-	  To compile this driver as a module, choose M here: the
-	  module will be called diag_bridge_test.  If unsure, choose N.
-
-config USB_QCOM_MDM_BRIDGE
-	tristate "USB Qualcomm modem bridge driver for DUN and RMNET"
-	depends on USB
-	help
-	  Say Y here if you have a Qualcomm modem device connected via USB that
-	  will be bridged in kernel space. This driver works as a bridge to pass
-	  control and data packets between the modem and peripheral usb gadget
-	  driver for dial up network and RMNET.
-	  To compile this driver as a module, choose M here: the module
-	  will be called mdm_bridge. If unsure, choose N.
-	  This option enables support for SMSC USB3503 HSIC to USB 2.0 Driver.
-
-config USB_QCOM_KS_BRIDGE
-	tristate "USB Qualcomm kick start bridge"
-	depends on USB
-	help
-	  Say Y here if you have a Qualcomm modem device connected via USB that
-	  will be bridged in kernel space. This driver works as a bridge to pass
-	  boot images, ram-dumps and efs sync
-	  To compile this driver as a module, choose M here: the module
-	  will be called ks_bridge. If unsure, choose N.
-
-config USB_QCOM_IPC_BRIDGE
-	tristate "USB Qualcomm IPC bridge bridge"
-	depends on USB
-	help
-	  Say Y here if you have a Qualcomm modem device connected via USB that
-	  will be bridged in kernel space. This driver works as a transport
-	  layer for IPC router module that enables communication between
-	  APPS processor and MODEM processor.
+	  module will be called chaoskey.

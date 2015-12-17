@@ -17,17 +17,13 @@
 #include <linux/power_supply.h>
 #include <linux/gpio.h>
 #include <linux/i2c.h>
-#if defined(CONFIG_MACH_ESPRESSO7420) && defined(CONFIG_FUELGAUGE_S2MG001)
-#include <linux/workqueue.h>
-#endif
 
 #include <linux/power/bq24190_charger.h>
 
 
 #define	BQ24190_MANUFACTURER	"Texas Instruments"
 
-/* Input Source Control Register */
-#define BQ24190_REG_ISC				0x00
+#define BQ24190_REG_ISC		0x00 /* Input Source Control */
 #define BQ24190_REG_ISC_EN_HIZ_MASK		BIT(7)
 #define BQ24190_REG_ISC_EN_HIZ_SHIFT		7
 #define BQ24190_REG_ISC_VINDPM_MASK		(BIT(6) | BIT(5) | BIT(4) | \
@@ -36,8 +32,7 @@
 #define BQ24190_REG_ISC_IINLIM_MASK		(BIT(2) | BIT(1) | BIT(0))
 #define BQ24190_REG_ISC_IINLIM_SHIFT		0
 
-/* Power-On Configuration Register */
-#define BQ24190_REG_POC				0x01
+#define BQ24190_REG_POC		0x01 /* Power-On Configuration */
 #define BQ24190_REG_POC_RESET_MASK		BIT(7)
 #define BQ24190_REG_POC_RESET_SHIFT		7
 #define BQ24190_REG_POC_WDT_RESET_MASK		BIT(6)
@@ -49,16 +44,14 @@
 #define BQ24190_REG_POC_BOOST_LIM_MASK		BIT(0)
 #define BQ24190_REG_POC_BOOST_LIM_SHIFT		0
 
-/* Charge Current Control Register */
-#define BQ24190_REG_CCC				0x02
+#define BQ24190_REG_CCC		0x02 /* Charge Current Control */
 #define BQ24190_REG_CCC_ICHG_MASK		(BIT(7) | BIT(6) | BIT(5) | \
 						 BIT(4) | BIT(3) | BIT(2))
 #define BQ24190_REG_CCC_ICHG_SHIFT		2
 #define BQ24190_REG_CCC_FORCE_20PCT_MASK	BIT(0)
 #define BQ24190_REG_CCC_FORCE_20PCT_SHIFT	0
 
-/* Pre-charge/Termination Current Cntl Register */
-#define BQ24190_REG_PCTCC			0x03
+#define BQ24190_REG_PCTCC	0x03 /* Pre-charge/Termination Current Cntl */
 #define BQ24190_REG_PCTCC_IPRECHG_MASK		(BIT(7) | BIT(6) | BIT(5) | \
 						 BIT(4))
 #define BQ24190_REG_PCTCC_IPRECHG_SHIFT		4
@@ -66,8 +59,7 @@
 						 BIT(0))
 #define BQ24190_REG_PCTCC_ITERM_SHIFT		0
 
-/* Charge Voltage Control Register */
-#define BQ24190_REG_CVC				0x04
+#define BQ24190_REG_CVC		0x04 /* Charge Voltage Control */
 #define BQ24190_REG_CVC_VREG_MASK		(BIT(7) | BIT(6) | BIT(5) | \
 						 BIT(4) | BIT(3) | BIT(2))
 #define BQ24190_REG_CVC_VREG_SHIFT		2
@@ -76,8 +68,7 @@
 #define BQ24190_REG_CVC_VRECHG_MASK		BIT(0)
 #define BQ24190_REG_CVC_VRECHG_SHIFT		0
 
-/* Charge Term/Timer Control Register */
-#define BQ24190_REG_CTTC			0x05
+#define BQ24190_REG_CTTC	0x05 /* Charge Term/Timer Control */
 #define BQ24190_REG_CTTC_EN_TERM_MASK		BIT(7)
 #define BQ24190_REG_CTTC_EN_TERM_SHIFT		7
 #define BQ24190_REG_CTTC_TERM_STAT_MASK		BIT(6)
@@ -91,8 +82,7 @@
 #define BQ24190_REG_CTTC_JEITA_ISET_MASK	BIT(0)
 #define BQ24190_REG_CTTC_JEITA_ISET_SHIFT	0
 
-/* IR Comp/Thermal Regulation Control Register */
-#define BQ24190_REG_ICTRC			0x06
+#define BQ24190_REG_ICTRC	0x06 /* IR Comp/Thermal Regulation Control */
 #define BQ24190_REG_ICTRC_BAT_COMP_MASK		(BIT(7) | BIT(6) | BIT(5))
 #define BQ24190_REG_ICTRC_BAT_COMP_SHIFT	5
 #define BQ24190_REG_ICTRC_VCLAMP_MASK		(BIT(4) | BIT(3) | BIT(2))
@@ -100,8 +90,7 @@
 #define BQ24190_REG_ICTRC_TREG_MASK		(BIT(1) | BIT(0))
 #define BQ24190_REG_ICTRC_TREG_SHIFT		0
 
-/* Misc. Operation Control Register */
-#define BQ24190_REG_MOC				0x07
+#define BQ24190_REG_MOC		0x07 /* Misc. Operation Control */
 #define BQ24190_REG_MOC_DPDM_EN_MASK		BIT(7)
 #define BQ24190_REG_MOC_DPDM_EN_SHIFT		7
 #define BQ24190_REG_MOC_TMR2X_EN_MASK		BIT(6)
@@ -113,8 +102,7 @@
 #define BQ24190_REG_MOC_INT_MASK_MASK		(BIT(1) | BIT(0))
 #define BQ24190_REG_MOC_INT_MASK_SHIFT		0
 
-/* System Status Register */
-#define BQ24190_REG_SS				0x08
+#define BQ24190_REG_SS		0x08 /* System Status */
 #define BQ24190_REG_SS_VBUS_STAT_MASK		(BIT(7) | BIT(6))
 #define BQ24190_REG_SS_VBUS_STAT_SHIFT		6
 #define BQ24190_REG_SS_CHRG_STAT_MASK		(BIT(5) | BIT(4))
@@ -128,8 +116,7 @@
 #define BQ24190_REG_SS_VSYS_STAT_MASK		BIT(0)
 #define BQ24190_REG_SS_VSYS_STAT_SHIFT		0
 
-/* Fault Register */
-#define BQ24190_REG_F				0x09
+#define BQ24190_REG_F		0x09 /* Fault */
 #define BQ24190_REG_F_WATCHDOG_FAULT_MASK	BIT(7)
 #define BQ24190_REG_F_WATCHDOG_FAULT_SHIFT	7
 #define BQ24190_REG_F_BOOST_FAULT_MASK		BIT(6)
@@ -141,13 +128,12 @@
 #define BQ24190_REG_F_NTC_FAULT_MASK		(BIT(2) | BIT(1) | BIT(0))
 #define BQ24190_REG_F_NTC_FAULT_SHIFT		0
 
-/* Vendor/Part/Revision Status Register */
-#define BQ24190_REG_VPRS			0x0A
+#define BQ24190_REG_VPRS	0x0A /* Vendor/Part/Revision Status */
 #define BQ24190_REG_VPRS_PN_MASK		(BIT(5) | BIT(4) | BIT(3))
 #define BQ24190_REG_VPRS_PN_SHIFT		3
-#define BQ24190_REG_VPRS_PN_24190		0x4
-#define BQ24190_REG_VPRS_PN_24192		0x5 /* Also 24193 */
-#define BQ24190_REG_VPRS_PN_24192I		0x3
+#define BQ24190_REG_VPRS_PN_24190			0x4
+#define BQ24190_REG_VPRS_PN_24192			0x5 /* Also 24193 */
+#define BQ24190_REG_VPRS_PN_24192I			0x3
 #define BQ24190_REG_VPRS_TS_PROFILE_MASK	BIT(2)
 #define BQ24190_REG_VPRS_TS_PROFILE_SHIFT	2
 #define BQ24190_REG_VPRS_DEV_REG_MASK		(BIT(1) | BIT(0))
@@ -166,11 +152,8 @@
 struct bq24190_dev_info {
 	struct i2c_client		*client;
 	struct device			*dev;
-	struct power_supply		charger;
-	struct power_supply		battery;
-#if defined(CONFIG_MACH_ESPRESSO7420) && defined(CONFIG_FUELGAUGE_S2MG001)
-	struct delayed_work polling_work;
-#endif
+	struct power_supply		*charger;
+	struct power_supply		*battery;
 	char				model_name[I2C_NAME_SIZE];
 	kernel_ulong_t			model;
 	unsigned int			gpio_int;
@@ -183,14 +166,6 @@ struct bq24190_dev_info {
 	u8				f_reg;
 	u8				ss_reg;
 	u8				watchdog;
-#if defined(CONFIG_MACH_ESPRESSO7420) && defined(CONFIG_FUELGAUGE_S2MG001)
-	char				*fuelgauge_name;
-	int				voltage_now;
-	int				voltage_avg;
-	int				voltage_ocv;
-	unsigned int			capacity[3];
-	int				soc_cnt;
-#endif
 };
 
 /*
@@ -448,8 +423,7 @@ static ssize_t bq24190_sysfs_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
 	struct power_supply *psy = dev_get_drvdata(dev);
-	struct bq24190_dev_info *bdi =
-			container_of(psy, struct bq24190_dev_info, charger);
+	struct bq24190_dev_info *bdi = power_supply_get_drvdata(psy);
 	struct bq24190_sysfs_field_info *info;
 	int ret;
 	u8 v;
@@ -469,8 +443,7 @@ static ssize_t bq24190_sysfs_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct power_supply *psy = dev_get_drvdata(dev);
-	struct bq24190_dev_info *bdi =
-			container_of(psy, struct bq24190_dev_info, charger);
+	struct bq24190_dev_info *bdi = power_supply_get_drvdata(psy);
 	struct bq24190_sysfs_field_info *info;
 	int ret;
 	u8 v;
@@ -494,13 +467,13 @@ static int bq24190_sysfs_create_group(struct bq24190_dev_info *bdi)
 {
 	bq24190_sysfs_init_attrs();
 
-	return sysfs_create_group(&bdi->charger.dev->kobj,
+	return sysfs_create_group(&bdi->charger->dev.kobj,
 			&bq24190_sysfs_attr_group);
 }
 
 static void bq24190_sysfs_remove_group(struct bq24190_dev_info *bdi)
 {
-	sysfs_remove_group(&bdi->charger.dev->kobj, &bq24190_sysfs_attr_group);
+	sysfs_remove_group(&bdi->charger->dev.kobj, &bq24190_sysfs_attr_group);
 }
 #else
 static int bq24190_sysfs_create_group(struct bq24190_dev_info *bdi)
@@ -832,8 +805,7 @@ static int bq24190_charger_set_voltage(struct bq24190_dev_info *bdi,
 static int bq24190_charger_get_property(struct power_supply *psy,
 		enum power_supply_property psp, union power_supply_propval *val)
 {
-	struct bq24190_dev_info *bdi =
-			container_of(psy, struct bq24190_dev_info, charger);
+	struct bq24190_dev_info *bdi = power_supply_get_drvdata(psy);
 	int ret;
 
 	dev_dbg(bdi->dev, "prop: %d\n", psp);
@@ -886,8 +858,7 @@ static int bq24190_charger_set_property(struct power_supply *psy,
 		enum power_supply_property psp,
 		const union power_supply_propval *val)
 {
-	struct bq24190_dev_info *bdi =
-			container_of(psy, struct bq24190_dev_info, charger);
+	struct bq24190_dev_info *bdi = power_supply_get_drvdata(psy);
 	int ret;
 
 	dev_dbg(bdi->dev, "prop: %d\n", psp);
@@ -947,18 +918,15 @@ static char *bq24190_charger_supplied_to[] = {
 	"main-battery",
 };
 
-static void bq24190_charger_init(struct power_supply *charger)
-{
-	charger->name = "bq24190-charger";
-	charger->type = POWER_SUPPLY_TYPE_USB;
-	charger->properties = bq24190_charger_properties;
-	charger->num_properties = ARRAY_SIZE(bq24190_charger_properties);
-	charger->supplied_to = bq24190_charger_supplied_to;
-	charger->num_supplies = ARRAY_SIZE(bq24190_charger_supplied_to);
-	charger->get_property = bq24190_charger_get_property;
-	charger->set_property = bq24190_charger_set_property;
-	charger->property_is_writeable = bq24190_charger_property_is_writeable;
-}
+static const struct power_supply_desc bq24190_charger_desc = {
+	.name			= "bq24190-charger",
+	.type			= POWER_SUPPLY_TYPE_USB,
+	.properties		= bq24190_charger_properties,
+	.num_properties		= ARRAY_SIZE(bq24190_charger_properties),
+	.get_property		= bq24190_charger_get_property,
+	.set_property		= bq24190_charger_set_property,
+	.property_is_writeable	= bq24190_charger_property_is_writeable,
+};
 
 /* Battery power supply property routines */
 
@@ -1124,48 +1092,10 @@ static int bq24190_battery_set_temp_alert_max(struct bq24190_dev_info *bdi,
 			ARRAY_SIZE(bq24190_ictrc_treg_values), val->intval);
 }
 
-#if defined(CONFIG_MACH_ESPRESSO7420) && defined(CONFIG_FUELGAUGE_S2MG001)
-static void sec_bat_get_battery_info(
-				struct work_struct *work)
-{
-	struct bq24190_dev_info *bdi =
-		container_of(work, struct bq24190_dev_info, polling_work.work);
-
-	union power_supply_propval value;
-
-	psy_do_property(bdi->fuelgauge_name, get,
-		POWER_SUPPLY_PROP_VOLTAGE_NOW, value);
-	bdi->voltage_now = value.intval;
-
-	value.intval = SEC_BATTERY_VOLTAGE_AVERAGE;
-	psy_do_property(bdi->fuelgauge_name, get,
-		POWER_SUPPLY_PROP_VOLTAGE_AVG, value);
-	bdi->voltage_avg = value.intval;
-
-	value.intval = SEC_BATTERY_VOLTAGE_OCV;
-	psy_do_property(bdi->fuelgauge_name, get,
-		POWER_SUPPLY_PROP_VOLTAGE_AVG, value);
-	bdi->voltage_ocv = value.intval;
-
-	/* To get SOC value (NOT raw SOC), need to reset value */
-	value.intval = 0;
-	psy_do_property(bdi->fuelgauge_name, get,
-		POWER_SUPPLY_PROP_CAPACITY, value);
-	bdi->soc_cnt++;
-	bdi->capacity[bdi->soc_cnt % 3] = value.intval;
-
-	schedule_delayed_work(&bdi->polling_work, HZ * 20);
-}
-#endif
-
 static int bq24190_battery_get_property(struct power_supply *psy,
 		enum power_supply_property psp, union power_supply_propval *val)
 {
-	struct bq24190_dev_info *bdi =
-			container_of(psy, struct bq24190_dev_info, battery);
-#if defined(CONFIG_MACH_ESPRESSO7420) && defined(CONFIG_FUELGAUGE_S2MG001)
-	union power_supply_propval value;
-#endif
+	struct bq24190_dev_info *bdi = power_supply_get_drvdata(psy);
 	int ret;
 
 	dev_dbg(bdi->dev, "prop: %d\n", psp);
@@ -1194,55 +1124,6 @@ static int bq24190_battery_get_property(struct power_supply *psy,
 		val->intval = POWER_SUPPLY_SCOPE_SYSTEM;
 		ret = 0;
 		break;
-#if defined(CONFIG_MACH_ESPRESSO7420) && defined(CONFIG_FUELGAUGE_S2MG001)
-	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
-		psy_do_property(bdi->fuelgauge_name, get,
-				POWER_SUPPLY_PROP_VOLTAGE_NOW, value);
-		bdi->voltage_now = value.intval;
-		dev_err(bdi->dev,
-			"%s: voltage now(%d)\n", __func__, bdi->voltage_now);
-		val->intval = bdi->voltage_now * 1000;
-		ret = 0;
-		break;
-	case POWER_SUPPLY_PROP_VOLTAGE_AVG:
-		value.intval = SEC_BATTERY_VOLTAGE_AVERAGE;
-		psy_do_property(bdi->fuelgauge_name, get,
-				POWER_SUPPLY_PROP_VOLTAGE_AVG, value);
-		bdi->voltage_avg = value.intval;
-		dev_err(bdi->dev,
-			"%s: voltage avg(%d)\n", __func__, bdi->voltage_avg);
-		val->intval = bdi->voltage_now * 1000;
-		ret = 0;
-		break;
-#endif
-	case POWER_SUPPLY_PROP_CAPACITY:
-#if defined(CONFIG_MACH_ESPRESSO7420) && defined(CONFIG_FUELGAUGE_S2MG001)
-		if (bq24190_battery_get_status(bdi, val) ==
-			POWER_SUPPLY_STATUS_FULL)
-			val->intval = 100;
-		else {
-			if (!bdi->capacity[0] && !bdi->capacity[1]
-					&& !bdi->capacity[2])
-				val->intval = 0;
-			else {
-				if (!bdi->capacity[bdi->soc_cnt % 3]) {
-					if (bdi->soc_cnt < 3) {
-						ret = -ENODATA;
-						break;
-					}
-					if (!bdi->capacity[(bdi->soc_cnt - 1) % 3])
-						val->intval = bdi->capacity[(bdi->soc_cnt - 2) % 3];
-					else
-						val->intval = bdi->capacity[(bdi->soc_cnt - 1) % 3];
-				} else
-					val->intval = bdi->capacity[bdi->soc_cnt % 3];
-			}
-		}
-#else
-		val->intval = 80;
-#endif
-		ret = 0;
-		break;
 	default:
 		ret = -ENODATA;
 	}
@@ -1255,8 +1136,7 @@ static int bq24190_battery_set_property(struct power_supply *psy,
 		enum power_supply_property psp,
 		const union power_supply_propval *val)
 {
-	struct bq24190_dev_info *bdi =
-			container_of(psy, struct bq24190_dev_info, battery);
+	struct bq24190_dev_info *bdi = power_supply_get_drvdata(psy);
 	int ret;
 
 	dev_dbg(bdi->dev, "prop: %d\n", psp);
@@ -1302,29 +1182,23 @@ static enum power_supply_property bq24190_battery_properties[] = {
 	POWER_SUPPLY_PROP_TECHNOLOGY,
 	POWER_SUPPLY_PROP_TEMP_ALERT_MAX,
 	POWER_SUPPLY_PROP_SCOPE,
-#if defined(CONFIG_MACH_ESPRESSO7420) && defined(CONFIG_FUELGAUGE_S2MG001)
-	POWER_SUPPLY_PROP_VOLTAGE_NOW,
-	POWER_SUPPLY_PROP_VOLTAGE_AVG,
-#endif
-	POWER_SUPPLY_PROP_CAPACITY,
 };
 
-static void bq24190_battery_init(struct power_supply *battery)
-{
-	battery->name = "bq24190-battery";
-	battery->type = POWER_SUPPLY_TYPE_BATTERY;
-	battery->properties = bq24190_battery_properties;
-	battery->num_properties = ARRAY_SIZE(bq24190_battery_properties);
-	battery->get_property = bq24190_battery_get_property;
-	battery->set_property = bq24190_battery_set_property;
-	battery->property_is_writeable = bq24190_battery_property_is_writeable;
-}
+static const struct power_supply_desc bq24190_battery_desc = {
+	.name			= "bq24190-battery",
+	.type			= POWER_SUPPLY_TYPE_BATTERY,
+	.properties		= bq24190_battery_properties,
+	.num_properties		= ARRAY_SIZE(bq24190_battery_properties),
+	.get_property		= bq24190_battery_get_property,
+	.set_property		= bq24190_battery_set_property,
+	.property_is_writeable	= bq24190_battery_property_is_writeable,
+};
 
 static irqreturn_t bq24190_irq_handler_thread(int irq, void *data)
 {
 	struct bq24190_dev_info *bdi = data;
 	bool alert_userspace = false;
-	u8 ss_reg, f_reg;
+	u8 ss_reg = 0, f_reg = 0;
 	int ret;
 
 	pm_runtime_get_sync(bdi->dev);
@@ -1385,8 +1259,8 @@ static irqreturn_t bq24190_irq_handler_thread(int irq, void *data)
 	 * interrupt received).
 	 */
 	if (alert_userspace && !bdi->first_time) {
-		power_supply_changed(&bdi->charger);
-		power_supply_changed(&bdi->battery);
+		power_supply_changed(bdi->charger);
+		power_supply_changed(bdi->battery);
 		bdi->first_time = false;
 	}
 
@@ -1434,12 +1308,6 @@ static int bq24190_setup_dt(struct bq24190_dev_info *bdi)
 	bdi->irq = irq_of_parse_and_map(bdi->dev->of_node, 0);
 	if (bdi->irq <= 0)
 		return -1;
-#if defined(CONFIG_MACH_ESPRESSO7420) && defined(CONFIG_FUELGAUGE_S2MG001)
-	if (of_property_read_string(bdi->dev->of_node, "battery,fuelgauge_name", (char const **)&bdi->fuelgauge_name)) {
-		dev_err(bdi->dev, "failed to get fuelgauge_name\n");
-		return -EINVAL;
-	}
-#endif
 
 	return 0;
 }
@@ -1484,6 +1352,7 @@ static int bq24190_probe(struct i2c_client *client,
 	struct i2c_adapter *adapter = to_i2c_adapter(client->dev.parent);
 	struct device *dev = &client->dev;
 	struct bq24190_platform_data *pdata = client->dev.platform_data;
+	struct power_supply_config charger_cfg = {}, battery_cfg = {};
 	struct bq24190_dev_info *bdi;
 	int ret;
 
@@ -1501,15 +1370,12 @@ static int bq24190_probe(struct i2c_client *client,
 	bdi->client = client;
 	bdi->dev = dev;
 	bdi->model = id->driver_data;
-	strncpy(bdi->model_name, id->name, I2C_NAME_SIZE-1);
+	strncpy(bdi->model_name, id->name, I2C_NAME_SIZE);
 	mutex_init(&bdi->f_reg_lock);
 	bdi->first_time = true;
 	bdi->charger_health_valid = false;
 	bdi->battery_health_valid = false;
 	bdi->battery_status_valid = false;
-#if defined(CONFIG_MACH_ESPRESSO7420) && defined(CONFIG_FUELGAUGE_S2MG001)
-	bdi->soc_cnt = -1;
-#endif
 
 	i2c_set_clientdata(client, bdi);
 
@@ -1521,22 +1387,6 @@ static int bq24190_probe(struct i2c_client *client,
 	if (ret) {
 		dev_err(dev, "Can't get irq info\n");
 		return -EINVAL;
-	}
-
-	bq24190_charger_init(&bdi->charger);
-
-	ret = power_supply_register(dev, &bdi->charger);
-	if (ret) {
-		dev_err(dev, "Can't register charger\n");
-		goto out2;
-	}
-
-	bq24190_battery_init(&bdi->battery);
-
-	ret = power_supply_register(dev, &bdi->battery);
-	if (ret) {
-		dev_err(dev, "Can't register battery\n");
-		goto out3;
 	}
 
 	ret = devm_request_threaded_irq(dev, bdi->irq, NULL,
@@ -1556,12 +1406,27 @@ static int bq24190_probe(struct i2c_client *client,
 		dev_err(dev, "Hardware init failed\n");
 		goto out2;
 	}
-	bdi->first_time = false;
-#if defined(CONFIG_MACH_ESPRESSO7420) && defined(CONFIG_FUELGAUGE_S2MG001)
-	INIT_DELAYED_WORK(&bdi->polling_work,
-				sec_bat_get_battery_info);
-	schedule_delayed_work(&bdi->polling_work, HZ * 5);
-#endif
+
+	charger_cfg.drv_data = bdi;
+	charger_cfg.supplied_to = bq24190_charger_supplied_to;
+	charger_cfg.num_supplicants = ARRAY_SIZE(bq24190_charger_supplied_to),
+	bdi->charger = power_supply_register(dev, &bq24190_charger_desc,
+						&charger_cfg);
+	if (IS_ERR(bdi->charger)) {
+		dev_err(dev, "Can't register charger\n");
+		ret = PTR_ERR(bdi->charger);
+		goto out2;
+	}
+
+	battery_cfg.drv_data = bdi;
+	bdi->battery = power_supply_register(dev, &bq24190_battery_desc,
+						&battery_cfg);
+	if (IS_ERR(bdi->battery)) {
+		dev_err(dev, "Can't register battery\n");
+		ret = PTR_ERR(bdi->battery);
+		goto out3;
+	}
+
 	ret = bq24190_sysfs_create_group(bdi);
 	if (ret) {
 		dev_err(dev, "Can't create sysfs entries\n");
@@ -1571,9 +1436,9 @@ static int bq24190_probe(struct i2c_client *client,
 	return 0;
 
 out4:
-	power_supply_unregister(&bdi->battery);
+	power_supply_unregister(bdi->battery);
 out3:
-	power_supply_unregister(&bdi->charger);
+	power_supply_unregister(bdi->charger);
 out2:
 	pm_runtime_disable(dev);
 out1:
@@ -1592,8 +1457,8 @@ static int bq24190_remove(struct i2c_client *client)
 	pm_runtime_put_sync(bdi->dev);
 
 	bq24190_sysfs_remove_group(bdi);
-	power_supply_unregister(&bdi->battery);
-	power_supply_unregister(&bdi->charger);
+	power_supply_unregister(bdi->battery);
+	power_supply_unregister(bdi->charger);
 	pm_runtime_disable(bdi->dev);
 
 	if (bdi->gpio_int)
@@ -1629,8 +1494,8 @@ static int bq24190_pm_resume(struct device *dev)
 	pm_runtime_put_sync(bdi->dev);
 
 	/* Things may have changed while suspended so alert upper layer */
-	power_supply_changed(&bdi->charger);
-	power_supply_changed(&bdi->battery);
+	power_supply_changed(bdi->charger);
+	power_supply_changed(bdi->battery);
 
 	return 0;
 }
@@ -1645,14 +1510,12 @@ static SIMPLE_DEV_PM_OPS(bq24190_pm_ops, bq24190_pm_suspend, bq24190_pm_resume);
  */
 static const struct i2c_device_id bq24190_i2c_ids[] = {
 	{ "bq24190", BQ24190_REG_VPRS_PN_24190 },
-	{ "bq24193", BQ24190_REG_VPRS_PN_24192 },
 	{ },
 };
 
 #ifdef CONFIG_OF
 static const struct of_device_id bq24190_of_match[] = {
 	{ .compatible = "ti,bq24190", },
-	{ .compatible = "ti,bq24193", },
 	{ },
 };
 MODULE_DEVICE_TABLE(of, bq24190_of_match);

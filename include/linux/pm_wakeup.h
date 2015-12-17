@@ -36,8 +36,8 @@
  * @last_time: Monotonic clock when the wakeup source's was touched last time.
  * @prevent_sleep_time: Total time this source has been preventing autosleep.
  * @event_count: Number of signaled wakeup events.
- * @active_count: Number of times the wakeup sorce was activated.
- * @relax_count: Number of times the wakeup sorce was deactivated.
+ * @active_count: Number of times the wakeup source was activated.
+ * @relax_count: Number of times the wakeup source was deactivated.
  * @expire_count: Number of times the wakeup source's timeout has expired.
  * @wakeup_count: Number of times the wakeup source might abort suspend.
  * @active: Status of the wakeup source.
@@ -46,7 +46,6 @@
 struct wakeup_source {
 	const char 		*name;
 	struct list_head	entry;
-	struct rcu_head		rcu;
 	spinlock_t		lock;
 	struct timer_list	timer;
 	unsigned long		timer_expires;
@@ -55,10 +54,6 @@ struct wakeup_source {
 	ktime_t last_time;
 	ktime_t start_prevent_time;
 	ktime_t prevent_sleep_time;
-#ifdef CONFIG_SEC_PM_DEBUG
-	ktime_t start_screen_off;
-	ktime_t time_while_screen_off;
-#endif
 	unsigned long		event_count;
 	unsigned long		active_count;
 	unsigned long		relax_count;
@@ -66,9 +61,6 @@ struct wakeup_source {
 	unsigned long		wakeup_count;
 	bool			active:1;
 	bool			autosleep_enabled:1;
-#ifdef CONFIG_SEC_PM_DEBUG
-	bool			is_screen_off:1;
-#endif
 };
 
 #ifdef CONFIG_PM_SLEEP

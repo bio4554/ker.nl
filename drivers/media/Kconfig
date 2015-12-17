@@ -59,6 +59,13 @@ config MEDIA_RADIO_SUPPORT
 		support radio reception. Disabling this option will
 		disable support for them.
 
+config MEDIA_SDR_SUPPORT
+	bool "Software defined radio support"
+	---help---
+	  Enable software defined radio support.
+
+	  Say Y when you have a software defined radio device.
+
 config MEDIA_RC_SUPPORT
 	bool "Remote Controller support"
 	depends on INPUT
@@ -73,16 +80,6 @@ config MEDIA_RC_SUPPORT
 
 	  Say Y when you have a TV or an IR device.
 
-config MEDIA_M2M1SHOT
-	bool "Non-streaming m2m media processing (m2m1shot) API"
-	---help---
-	  Enables support for non-steaming m2m media processing API for some
-	  device drivers like JPEG codec.
-
-config MEDIA_M2M1SHOT_TESTDEV
-	depends on MEDIA_M2M1SHOT
-	bool "Test driver for non-streaming m2m media processing (m2m1shot) API"
-
 #
 # Media controller
 #	Selectable only for webcam/grabbers, as other drivers don't use it
@@ -90,12 +87,21 @@ config MEDIA_M2M1SHOT_TESTDEV
 
 config MEDIA_CONTROLLER
 	bool "Media Controller API"
-	depends on MEDIA_CAMERA_SUPPORT
+	depends on MEDIA_CAMERA_SUPPORT || MEDIA_ANALOG_TV_SUPPORT || MEDIA_DIGITAL_TV_SUPPORT
 	---help---
 	  Enable the media controller API used to query media devices internal
 	  topology and configure it dynamically.
 
 	  This API is mostly used by camera interfaces in embedded platforms.
+
+config MEDIA_CONTROLLER_DVB
+	bool "Enable Media controller for DVB"
+	depends on MEDIA_CONTROLLER
+	depends on BROKEN
+	---help---
+	  Enable the media controller API support for DVB.
+
+	  This is currently experimental.
 
 #
 # Video4Linux support
@@ -105,7 +111,7 @@ config MEDIA_CONTROLLER
 config VIDEO_DEV
 	tristate
 	depends on MEDIA_SUPPORT
-	depends on MEDIA_CAMERA_SUPPORT || MEDIA_ANALOG_TV_SUPPORT || MEDIA_RADIO_SUPPORT
+	depends on MEDIA_CAMERA_SUPPORT || MEDIA_ANALOG_TV_SUPPORT || MEDIA_RADIO_SUPPORT || MEDIA_SDR_SUPPORT
 	default y
 
 config VIDEO_V4L2_SUBDEV_API
@@ -163,7 +169,6 @@ source "drivers/media/usb/Kconfig"
 source "drivers/media/pci/Kconfig"
 source "drivers/media/platform/Kconfig"
 source "drivers/media/mmc/Kconfig"
-source "drivers/media/parport/Kconfig"
 source "drivers/media/radio/Kconfig"
 
 comment "Supported FireWire (IEEE 1394) Adapters"
@@ -181,7 +186,10 @@ comment "Media ancillary drivers (tuners, sensors, i2c, frontends)"
 
 config MEDIA_SUBDRV_AUTOSELECT
 	bool "Autoselect ancillary drivers (tuners, sensors, i2c, frontends)"
-	depends on MEDIA_ANALOG_TV_SUPPORT || MEDIA_DIGITAL_TV_SUPPORT || MEDIA_CAMERA_SUPPORT
+	depends on MEDIA_ANALOG_TV_SUPPORT || MEDIA_DIGITAL_TV_SUPPORT || MEDIA_CAMERA_SUPPORT || MEDIA_SDR_SUPPORT
+	depends on HAS_IOMEM
+	select I2C
+	select I2C_MUX
 	default y
 	help
 	  By default, a media driver auto-selects all possible ancillary
@@ -209,13 +217,4 @@ source "drivers/media/i2c/Kconfig"
 source "drivers/media/tuners/Kconfig"
 source "drivers/media/dvb-frontends/Kconfig"
 
-#
-# TDMB drivers
-#
-
-source "drivers/media/tdmb/Kconfig"
-
-# ISDBT Drivers
-#
-source "drivers/media/isdbt/Kconfig"
 endif # MEDIA_SUPPORT

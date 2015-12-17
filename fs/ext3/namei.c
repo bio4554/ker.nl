@@ -1049,19 +1049,19 @@ struct dentry *ext3_get_parent(struct dentry *child)
 	struct ext3_dir_entry_2 * de;
 	struct buffer_head *bh;
 
-	bh = ext3_find_entry(child->d_inode, &dotdot, &de);
+	bh = ext3_find_entry(d_inode(child), &dotdot, &de);
 	if (!bh)
 		return ERR_PTR(-ENOENT);
 	ino = le32_to_cpu(de->inode);
 	brelse(bh);
 
-	if (!ext3_valid_inum(child->d_inode->i_sb, ino)) {
-		ext3_error(child->d_inode->i_sb, "ext3_get_parent",
+	if (!ext3_valid_inum(d_inode(child)->i_sb, ino)) {
+		ext3_error(d_inode(child)->i_sb, "ext3_get_parent",
 			   "bad inode number: %lu", ino);
 		return ERR_PTR(-EIO);
 	}
 
-	return d_obtain_alias(ext3_iget(child->d_inode->i_sb, ino));
+	return d_obtain_alias(ext3_iget(d_inode(child)->i_sb, ino));
 }
 
 #define S_SHIFT 12
@@ -1243,7 +1243,7 @@ static int add_dirent_to_buf(handle_t *handle, struct dentry *dentry,
 			     struct inode *inode, struct ext3_dir_entry_2 *de,
 			     struct buffer_head * bh)
 {
-	struct inode	*dir = dentry->d_parent->d_inode;
+	struct inode	*dir = d_inode(dentry->d_parent);
 	const char	*name = dentry->d_name.name;
 	int		namelen = dentry->d_name.len;
 	unsigned long	offset = 0;
@@ -1330,7 +1330,7 @@ static int add_dirent_to_buf(handle_t *handle, struct dentry *dentry,
 static int make_indexed_dir(handle_t *handle, struct dentry *dentry,
 			    struct inode *inode, struct buffer_head *bh)
 {
-	struct inode	*dir = dentry->d_parent->d_inode;
+	struct inode	*dir = d_inode(dentry->d_parent);
 	const char	*name = dentry->d_name.name;
 	int		namelen = dentry->d_name.len;
 	struct buffer_head *bh2;
@@ -1435,7 +1435,7 @@ static int make_indexed_dir(handle_t *handle, struct dentry *dentry,
 static int ext3_add_entry (handle_t *handle, struct dentry *dentry,
 	struct inode *inode)
 {
-	struct inode *dir = dentry->d_parent->d_inode;
+	struct inode *dir = d_inode(dentry->d_parent);
 	struct buffer_head * bh;
 	struct ext3_dir_entry_2 *de;
 	struct super_block * sb;
@@ -1489,7 +1489,7 @@ static int ext3_dx_add_entry(handle_t *handle, struct dentry *dentry,
 	struct dx_entry *entries, *at;
 	struct dx_hash_info hinfo;
 	struct buffer_head * bh;
-	struct inode *dir = dentry->d_parent->d_inode;
+	struct inode *dir = d_inode(dentry->d_parent);
 	struct super_block * sb = dir->i_sb;
 	struct ext3_dir_entry_2 *de;
 	int err;
@@ -1756,6 +1756,44 @@ retry:
 	ext3_journal_stop(handle);
 	if (err == -ENOSPC && ext3_should_retry_alloc(dir->i_sb, &retries))
 		goto retry;
+	return err;
+}
+
+static int ext3_tmpfile(struct inode *dir, struct dentry *dentry, umode_t mode)
+{
+	handle_t *handle;
+	struct inode *inode;
+	int err, retries = 0;
+
+	dquot_initialize(dir);
+
+retry:
+	handle = ext3_journal_start(dir, EXT3_MAXQUOTAS_INIT_BLOCKS(dir->i_sb) +
+			  4 + EXT3_XATTR_TRANS_BLOCKS);
+
+	if (IS_ERR(handle))
+		return PTR_ERR(handle);
+
+	inode = ext3_new_inode (handle, dir, NULL, mode);
+	err = PTR_ERR(inode);
+	if (!IS_ERR(inode)) {
+		inode->i_op = &ext3_file_inode_operations;
+		inode->i_fop = &ext3_file_operations;
+		ext3_set_aops(inode);
+		d_tmpfile(dentry, inode);
+		err = ext3_orphan_add(handle, inode);
+		if (err)
+			goto err_unlock_inode;
+		mark_inode_dirty(inode);
+		unlock_new_inode(inode);
+	}
+	ext3_journal_stop(handle);
+	if (err == -ENOSPC && ext3_should_retry_alloc(dir->i_sb, &retries))
+		goto retry;
+	return err;
+err_unlock_inode:
+	ext3_journal_stop(handle);
+	unlock_new_inode(inode);
 	return err;
 }
 
@@ -2073,7 +2111,7 @@ static int ext3_rmdir (struct inode * dir, struct dentry *dentry)
 	/* Initialize quotas before so that eventual writes go in
 	 * separate transaction */
 	dquot_initialize(dir);
-	dquot_initialize(dentry->d_inode);
+	dquot_initialize(d_inode(dentry));
 
 	handle = ext3_journal_start(dir, EXT3_DELETE_TRANS_BLOCKS(dir->i_sb));
 	if (IS_ERR(handle))
@@ -2087,7 +2125,7 @@ static int ext3_rmdir (struct inode * dir, struct dentry *dentry)
 	if (IS_DIRSYNC(dir))
 		handle->h_sync = 1;
 
-	inode = dentry->d_inode;
+	inode = d_inode(dentry);
 
 	retval = -EIO;
 	if (le32_to_cpu(de->inode) != inode->i_ino)
@@ -2135,7 +2173,7 @@ static int ext3_unlink(struct inode * dir, struct dentry *dentry)
 	/* Initialize quotas before so that eventual writes go
 	 * in separate transaction */
 	dquot_initialize(dir);
-	dquot_initialize(dentry->d_inode);
+	dquot_initialize(d_inode(dentry));
 
 	handle = ext3_journal_start(dir, EXT3_DELETE_TRANS_BLOCKS(dir->i_sb));
 	if (IS_ERR(handle))
@@ -2149,7 +2187,7 @@ static int ext3_unlink(struct inode * dir, struct dentry *dentry)
 	if (!bh)
 		goto end_unlink;
 
-	inode = dentry->d_inode;
+	inode = d_inode(dentry);
 
 	retval = -EIO;
 	if (le32_to_cpu(de->inode) != inode->i_ino)
@@ -2290,7 +2328,7 @@ static int ext3_link (struct dentry * old_dentry,
 		struct inode * dir, struct dentry *dentry)
 {
 	handle_t *handle;
-	struct inode *inode = old_dentry->d_inode;
+	struct inode *inode = d_inode(old_dentry);
 	int err, retries = 0;
 
 	if (inode->i_nlink >= EXT3_LINK_MAX)
@@ -2300,7 +2338,7 @@ static int ext3_link (struct dentry * old_dentry,
 
 retry:
 	handle = ext3_journal_start(dir, EXT3_DATA_TRANS_BLOCKS(dir->i_sb) +
-					EXT3_INDEX_EXTRA_TRANS_BLOCKS);
+					EXT3_INDEX_EXTRA_TRANS_BLOCKS + 1);
 	if (IS_ERR(handle))
 		return PTR_ERR(handle);
 
@@ -2314,6 +2352,11 @@ retry:
 	err = ext3_add_entry(handle, dentry, inode);
 	if (!err) {
 		ext3_mark_inode_dirty(handle, inode);
+		/* this can happen only for tmpfile being
+		 * linked the first time
+		 */
+		if (inode->i_nlink == 1)
+			ext3_orphan_del(handle, inode);
 		d_instantiate(dentry, inode);
 	} else {
 		drop_nlink(inode);
@@ -2348,8 +2391,8 @@ static int ext3_rename (struct inode * old_dir, struct dentry *old_dentry,
 
 	/* Initialize quotas before so that eventual writes go
 	 * in separate transaction */
-	if (new_dentry->d_inode)
-		dquot_initialize(new_dentry->d_inode);
+	if (d_really_is_positive(new_dentry))
+		dquot_initialize(d_inode(new_dentry));
 	handle = ext3_journal_start(old_dir, 2 *
 					EXT3_DATA_TRANS_BLOCKS(old_dir->i_sb) +
 					EXT3_INDEX_EXTRA_TRANS_BLOCKS + 2);
@@ -2366,12 +2409,12 @@ static int ext3_rename (struct inode * old_dir, struct dentry *old_dentry,
 	 *  and merrily kill the link to whatever was created under the
 	 *  same name. Goodbye sticky bit ;-<
 	 */
-	old_inode = old_dentry->d_inode;
+	old_inode = d_inode(old_dentry);
 	retval = -ENOENT;
 	if (!old_bh || le32_to_cpu(old_de->inode) != old_inode->i_ino)
 		goto end_rename;
 
-	new_inode = new_dentry->d_inode;
+	new_inode = d_inode(new_dentry);
 	new_bh = ext3_find_entry(new_dir, &new_dentry->d_name, &new_de);
 	if (new_bh) {
 		if (!new_inode) {
@@ -2516,6 +2559,7 @@ const struct inode_operations ext3_dir_inode_operations = {
 	.mkdir		= ext3_mkdir,
 	.rmdir		= ext3_rmdir,
 	.mknod		= ext3_mknod,
+	.tmpfile	= ext3_tmpfile,
 	.rename		= ext3_rename,
 	.setattr	= ext3_setattr,
 #ifdef CONFIG_EXT3_FS_XATTR
@@ -2525,6 +2569,7 @@ const struct inode_operations ext3_dir_inode_operations = {
 	.removexattr	= generic_removexattr,
 #endif
 	.get_acl	= ext3_get_acl,
+	.set_acl	= ext3_set_acl,
 };
 
 const struct inode_operations ext3_special_inode_operations = {
@@ -2536,4 +2581,5 @@ const struct inode_operations ext3_special_inode_operations = {
 	.removexattr	= generic_removexattr,
 #endif
 	.get_acl	= ext3_get_acl,
+	.set_acl	= ext3_set_acl,
 };

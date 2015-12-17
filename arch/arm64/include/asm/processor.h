@@ -3,7 +3,6 @@
  *
  * Copyright (C) 1995-1999 Russell King
  * Copyright (C) 2012 ARM Ltd.
- * Copyright (c) 2014, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -32,9 +31,9 @@
 
 #include <asm/fpsimd.h>
 #include <asm/hw_breakpoint.h>
+#include <asm/pgtable-hwdef.h>
 #include <asm/ptrace.h>
 #include <asm/types.h>
-#include <asm/relaxed.h>
 
 #ifdef __KERNEL__
 #define STACK_TOP_MAX		TASK_SIZE_64
@@ -46,7 +45,8 @@
 #define STACK_TOP		STACK_TOP_MAX
 #endif /* CONFIG_COMPAT */
 
-#define ARCH_LOW_ADDRESS_LIMIT	PHYS_MASK
+extern phys_addr_t arm64_dma_phys_limit;
+#define ARCH_LOW_ADDRESS_LIMIT	(arm64_dma_phys_limit - 1)
 #endif /* __KERNEL__ */
 
 struct debug_info {
@@ -81,6 +81,7 @@ struct thread_struct {
 	unsigned long		tp_value;
 	struct fpsimd_state	fpsimd_state;
 	unsigned long		fault_address;	/* fault info */
+	unsigned long		fault_code;	/* ESR_EL1 value */
 	struct debug_info	debug;		/* debugging */
 };
 
@@ -124,14 +125,14 @@ struct task_struct;
 /* Free all resources held by a thread. */
 extern void release_thread(struct task_struct *);
 
-/* Prepare to copy thread state - unlazy all lazy status */
-#define prepare_to_copy(tsk)	do { } while (0)
-
 unsigned long get_wchan(struct task_struct *p);
 
-#define cpu_relax()			barrier()
+static inline void cpu_relax(void)
+{
+	asm volatile("yield" ::: "memory");
+}
 
-#define cpu_read_relax()		wfe()
+#define cpu_relax_lowlatency()                cpu_relax()
 
 /* Thread switching */
 extern struct task_struct *cpu_switch_to(struct task_struct *prev,
@@ -167,7 +168,5 @@ static inline void spin_lock_prefetch(const void *x)
 #define HAVE_ARCH_PICK_MMAP_LAYOUT
 
 #endif
-
-#include <asm-generic/processor.h>
 
 #endif /* __ASM_PROCESSOR_H */

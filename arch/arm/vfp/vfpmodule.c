@@ -642,12 +642,31 @@ int vfp_restore_user_hwstate(struct user_vfp __user *ufp,
 static int vfp_hotplug(struct notifier_block *b, unsigned long action,
 	void *hcpu)
 {
-	if (action == CPU_DYING || action == CPU_DYING_FROZEN) {
-		unsigned int cpu = (long)hcpu;
-		vfp_current_hw_state[cpu] = NULL;
-	} else if (action == CPU_STARTING || action == CPU_STARTING_FROZEN)
+	if (action == CPU_DYING || action == CPU_DYING_FROZEN)
+		vfp_current_hw_state[(long)hcpu] = NULL;
+	else if (action == CPU_STARTING || action == CPU_STARTING_FROZEN)
 		vfp_enable(NULL);
 	return NOTIFY_OK;
+}
+
+void vfp_kmode_exception(void)
+{
+	/*
+	 * If we reach this point, a floating point exception has been raised
+	 * while running in kernel mode. If the NEON/VFP unit was enabled at the
+	 * time, it means a VFP instruction has been issued that requires
+	 * software assistance to complete, something which is not currently
+	 * supported in kernel mode.
+	 * If the NEON/VFP unit was disabled, and the location pointed to below
+	 * is properly preceded by a call to kernel_neon_begin(), something has
+	 * caused the task to be scheduled out and back in again. In this case,
+	 * rebuilding and running with CONFIG_DEBUG_ATOMIC_SLEEP enabled should
+	 * be helpful in localizing the problem.
+	 */
+	if (fmrx(FPEXC) & FPEXC_EN)
+		pr_crit("BUG: unsupported FP instruction in kernel mode\n");
+	else
+		pr_crit("BUG: FP instruction issued in kernel mode with FP unit disabled\n");
 }
 
 #ifdef CONFIG_KERNEL_MODE_NEON
@@ -719,63 +738,73 @@ static int __init vfp_init(void)
 	vfp_vector = vfp_null_entry;
 
 	pr_info("VFP support v0.3: ");
-	if (VFP_arch)
+	if (VFP_arch) {
 		pr_cont("not present\n");
-	else if (vfpsid & FPSID_NODOUBLE) {
-		pr_cont("no double precision support\n");
-	} else {
-		hotcpu_notifier(vfp_hotplug, 0);
-
-		VFP_arch = (vfpsid & FPSID_ARCH_MASK) >> FPSID_ARCH_BIT;  /* Extract the architecture version */
-		pr_cont("implementor %02x architecture %d part %02x variant %x rev %x\n",
-			(vfpsid & FPSID_IMPLEMENTER_MASK) >> FPSID_IMPLEMENTER_BIT,
-			(vfpsid & FPSID_ARCH_MASK) >> FPSID_ARCH_BIT,
-			(vfpsid & FPSID_PART_MASK) >> FPSID_PART_BIT,
-			(vfpsid & FPSID_VARIANT_MASK) >> FPSID_VARIANT_BIT,
-			(vfpsid & FPSID_REV_MASK) >> FPSID_REV_BIT);
-
-		vfp_vector = vfp_support_entry;
-
-		thread_register_notifier(&vfp_notifier_block);
-		vfp_pm_init();
-
-		/*
-		 * We detected VFP, and the support code is
-		 * in place; report VFP support to userspace.
-		 */
-		elf_hwcap |= HWCAP_VFP;
-#ifdef CONFIG_VFPv3
-		if (VFP_arch >= 2) {
-			elf_hwcap |= HWCAP_VFPv3;
-
-			/*
-			 * Check for VFPv3 D16 and VFPv4 D16.  CPUs in
-			 * this configuration only have 16 x 64bit
-			 * registers.
-			 */
-			if (((fmrx(MVFR0) & MVFR0_A_SIMD_MASK)) == 1)
-				elf_hwcap |= HWCAP_VFPv3D16; /* also v4-D16 */
-			else
-				elf_hwcap |= HWCAP_VFPD32;
-		}
-#endif
+		return 0;
+	/* Extract the architecture on CPUID scheme */
+	} else if ((read_cpuid_id() & 0x000f0000) == 0x000f0000) {
+		VFP_arch = vfpsid & FPSID_CPUID_ARCH_MASK;
+		VFP_arch >>= FPSID_ARCH_BIT;
 		/*
 		 * Check for the presence of the Advanced SIMD
 		 * load/store instructions, integer and single
 		 * precision floating point operations. Only check
 		 * for NEON if the hardware has the MVFR registers.
 		 */
-		if ((read_cpuid_id() & 0x000f0000) == 0x000f0000) {
-#ifdef CONFIG_NEON
-			if ((fmrx(MVFR1) & 0x000fff00) == 0x00011100)
-				elf_hwcap |= HWCAP_NEON;
-#endif
-#ifdef CONFIG_VFPv3
+		if (IS_ENABLED(CONFIG_NEON) &&
+		   (fmrx(MVFR1) & 0x000fff00) == 0x00011100)
+			elf_hwcap |= HWCAP_NEON;
+
+		if (IS_ENABLED(CONFIG_VFPv3)) {
+			u32 mvfr0 = fmrx(MVFR0);
+			if (((mvfr0 & MVFR0_DP_MASK) >> MVFR0_DP_BIT) == 0x2 ||
+			    ((mvfr0 & MVFR0_SP_MASK) >> MVFR0_SP_BIT) == 0x2) {
+				elf_hwcap |= HWCAP_VFPv3;
+				/*
+				 * Check for VFPv3 D16 and VFPv4 D16.  CPUs in
+				 * this configuration only have 16 x 64bit
+				 * registers.
+				 */
+				if ((mvfr0 & MVFR0_A_SIMD_MASK) == 1)
+					/* also v4-D16 */
+					elf_hwcap |= HWCAP_VFPv3D16;
+				else
+					elf_hwcap |= HWCAP_VFPD32;
+			}
+
 			if ((fmrx(MVFR1) & 0xf0000000) == 0x10000000)
 				elf_hwcap |= HWCAP_VFPv4;
-#endif
 		}
+	/* Extract the architecture version on pre-cpuid scheme */
+	} else {
+		if (vfpsid & FPSID_NODOUBLE) {
+			pr_cont("no double precision support\n");
+			return 0;
+		}
+
+		VFP_arch = (vfpsid & FPSID_ARCH_MASK) >> FPSID_ARCH_BIT;
 	}
+
+	hotcpu_notifier(vfp_hotplug, 0);
+
+	vfp_vector = vfp_support_entry;
+
+	thread_register_notifier(&vfp_notifier_block);
+	vfp_pm_init();
+
+	/*
+	 * We detected VFP, and the support code is
+	 * in place; report VFP support to userspace.
+	 */
+	elf_hwcap |= HWCAP_VFP;
+
+	pr_cont("implementor %02x architecture %d part %02x variant %x rev %x\n",
+		(vfpsid & FPSID_IMPLEMENTER_MASK) >> FPSID_IMPLEMENTER_BIT,
+		VFP_arch,
+		(vfpsid & FPSID_PART_MASK) >> FPSID_PART_BIT,
+		(vfpsid & FPSID_VARIANT_MASK) >> FPSID_VARIANT_BIT,
+		(vfpsid & FPSID_REV_MASK) >> FPSID_REV_BIT);
+
 	return 0;
 }
 

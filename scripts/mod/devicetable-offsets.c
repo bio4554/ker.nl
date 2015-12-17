@@ -168,6 +168,9 @@ int main(void)
 	DEVID_FIELD(amba_id, id);
 	DEVID_FIELD(amba_id, mask);
 
+	DEVID(mips_cdmm_device_id);
+	DEVID_FIELD(mips_cdmm_device_id, type);
+
 	DEVID(x86_cpu_id);
 	DEVID_FIELD(x86_cpu_id, feature);
 	DEVID_FIELD(x86_cpu_id, family);
@@ -179,6 +182,12 @@ int main(void)
 
 	DEVID(mei_cl_device_id);
 	DEVID_FIELD(mei_cl_device_id, name);
+
+	DEVID(rio_device_id);
+	DEVID_FIELD(rio_device_id, did);
+	DEVID_FIELD(rio_device_id, vid);
+	DEVID_FIELD(rio_device_id, asm_did);
+	DEVID_FIELD(rio_device_id, asm_vid);
 
 	return 0;
 }

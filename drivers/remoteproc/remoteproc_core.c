@@ -94,19 +94,8 @@ static int rproc_enable_iommu(struct rproc *rproc)
 	struct device *dev = rproc->dev.parent;
 	int ret;
 
-	/*
-	 * We currently use iommu_present() to decide if an IOMMU
-	 * setup is needed.
-	 *
-	 * This works for simple cases, but will easily fail with
-	 * platforms that do have an IOMMU, but not for this specific
-	 * rproc.
-	 *
-	 * This will be easily solved by introducing hw capabilities
-	 * that will be set by the remoteproc driver.
-	 */
-	if (!iommu_present(dev->bus)) {
-		dev_dbg(dev, "iommu not found\n");
+	if (!rproc->has_iommu) {
+		dev_dbg(dev, "iommu not present\n");
 		return 0;
 	}
 
@@ -762,13 +751,6 @@ static void rproc_resource_cleanup(struct rproc *rproc)
 		kfree(entry);
 	}
 
-	/* clean up carveout allocations */
-	list_for_each_entry_safe(entry, tmp, &rproc->carveouts, node) {
-		dma_free_coherent(dev->parent, entry->len, entry->va, entry->dma);
-		list_del(&entry->node);
-		kfree(entry);
-	}
-
 	/* clean up iommu mapping entries */
 	list_for_each_entry_safe(entry, tmp, &rproc->mappings, node) {
 		size_t unmapped;
@@ -780,6 +762,13 @@ static void rproc_resource_cleanup(struct rproc *rproc)
 								unmapped);
 		}
 
+		list_del(&entry->node);
+		kfree(entry);
+	}
+
+	/* clean up carveout allocations */
+	list_for_each_entry_safe(entry, tmp, &rproc->carveouts, node) {
+		dma_free_coherent(dev->parent, entry->len, entry->va, entry->dma);
 		list_del(&entry->node);
 		kfree(entry);
 	}
@@ -815,18 +804,17 @@ static int rproc_fw_boot(struct rproc *rproc, const struct firmware *fw)
 	}
 
 	rproc->bootaddr = rproc_get_boot_addr(rproc, fw);
+	ret = -EINVAL;
 
 	/* look for the resource table */
 	table = rproc_find_rsc_table(rproc, fw, &tablesz);
 	if (!table) {
-		ret = -EINVAL;
 		goto clean_up;
 	}
 
 	/* Verify that resource table in loaded fw is unchanged */
 	if (rproc->table_csum != crc32(0, table, tablesz)) {
 		dev_err(dev, "resource checksum failed, fw changed?\n");
-		ret = -EINVAL;
 		goto clean_up;
 	}
 
@@ -852,8 +840,10 @@ static int rproc_fw_boot(struct rproc *rproc, const struct firmware *fw)
 	 * copy this information to device memory.
 	 */
 	loaded_table = rproc_find_loaded_rsc_table(rproc, fw);
-	if (!loaded_table)
+	if (!loaded_table) {
+		ret = -EINVAL;
 		goto clean_up;
+	}
 
 	memcpy(loaded_table, rproc->cached_table, tablesz);
 
@@ -913,11 +903,10 @@ static void rproc_fw_config_virtio(const struct firmware *fw, void *context)
 	 * will be stored in the cached_table. Before the device is started,
 	 * cached_table will be copied into devic memory.
 	 */
-	rproc->cached_table = kmalloc(tablesz, GFP_KERNEL);
+	rproc->cached_table = kmemdup(table, tablesz, GFP_KERNEL);
 	if (!rproc->cached_table)
 		goto out;
 
-	memcpy(rproc->cached_table, table, tablesz);
 	rproc->table_ptr = rproc->cached_table;
 
 	/* count the number of notify-ids */

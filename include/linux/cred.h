@@ -62,20 +62,35 @@ do {							\
 		groups_free(group_info);		\
 } while (0)
 
-extern struct group_info *groups_alloc(int);
 extern struct group_info init_groups;
+#ifdef CONFIG_MULTIUSER
+extern struct group_info *groups_alloc(int);
 extern void groups_free(struct group_info *);
+
+extern int in_group_p(kgid_t);
+extern int in_egroup_p(kgid_t);
+#else
+static inline void groups_free(struct group_info *group_info)
+{
+}
+
+static inline int in_group_p(kgid_t grp)
+{
+        return 1;
+}
+static inline int in_egroup_p(kgid_t grp)
+{
+        return 1;
+}
+#endif
 extern int set_current_groups(struct group_info *);
-extern int set_groups(struct cred *, struct group_info *);
+extern void set_groups(struct cred *, struct group_info *);
 extern int groups_search(const struct group_info *, kgid_t);
 extern bool may_setgroups(void);
 
 /* access the groups "array" with this macro */
 #define GROUP_AT(gi, i) \
 	((gi)->blocks[(i) / NGROUPS_PER_BLOCK][(i) % NGROUPS_PER_BLOCK])
-
-extern int in_group_p(kgid_t);
-extern int in_egroup_p(kgid_t);
 
 /*
  * The security context of a task
@@ -137,16 +152,7 @@ struct cred {
 	struct user_namespace *user_ns; /* user_ns the caps and keyrings are relative to. */
 	struct group_info *group_info;	/* supplementary groups for euid/fsgid */
 	struct rcu_head	rcu;		/* RCU deletion hook */
-#ifdef CONFIG_RKP_KDP
-	atomic_t *use_cnt;
-	struct task_struct *bp_task;
-	void *bp_pgd;
-	unsigned long long type;
-#endif /*CONFIG_RKP_KDP*/
 };
-#ifdef CONFIG_RKP_KDP
-#define override_creds(x) rkp_override_creds(&x)
-#endif /*CONFIG_RKP_KDP*/
 
 extern void __put_cred(struct cred *);
 extern void exit_creds(struct task_struct *);
@@ -157,11 +163,7 @@ extern struct cred *prepare_creds(void);
 extern struct cred *prepare_exec_creds(void);
 extern int commit_creds(struct cred *);
 extern void abort_creds(struct cred *);
-#ifndef CONFIG_RKP_KDP
 extern const struct cred *override_creds(const struct cred *);
-#else
-extern const struct cred *rkp_override_creds(struct cred **);
-#endif /*CONFIG_RKP_KDP*/
 extern void revert_creds(const struct cred *);
 extern struct cred *prepare_kernel_cred(struct task_struct *);
 extern int change_create_files_as(struct cred *, struct inode *);
@@ -217,15 +219,11 @@ static inline void validate_process_creds(void)
  * Get a reference on the specified set of new credentials.  The caller must
  * release the reference.
  */
-#ifdef CONFIG_RKP_KDP
-struct cred *get_new_cred(struct cred *cred);
-#else
 static inline struct cred *get_new_cred(struct cred *cred)
 {
 	atomic_inc(&cred->usage);
 	return cred;
 }
-#endif /*CONFIG_RKP_KDP*/
 
 /**
  * get_cred - Get a reference on a set of credentials
@@ -258,9 +256,6 @@ static inline const struct cred *get_cred(const struct cred *cred)
  * on task_struct are attached by const pointers to prevent accidental
  * alteration of otherwise immutable credential sets.
  */
-#ifdef CONFIG_RKP_KDP
-void put_cred(const struct cred *_cred);
-#else
 static inline void put_cred(const struct cred *_cred)
 {
 	struct cred *cred = (struct cred *) _cred;
@@ -269,7 +264,6 @@ static inline void put_cred(const struct cred *_cred)
 	if (atomic_dec_and_test(&(cred)->usage))
 		__put_cred(cred);
 }
-#endif /*CONFIG_RKP_KDP*/
 
 /**
  * current_cred - Access the current task's subjective credentials
@@ -279,6 +273,15 @@ static inline void put_cred(const struct cred *_cred)
  */
 #define current_cred() \
 	rcu_dereference_protected(current->cred, 1)
+
+/**
+ * current_real_cred - Access the current task's objective credentials
+ *
+ * Access the objective credentials of the current task.  RCU-safe,
+ * since nobody else can modify it.
+ */
+#define current_real_cred() \
+	rcu_dereference_protected(current->real_cred, 1)
 
 /**
  * __task_cred - Access a task's objective credentials

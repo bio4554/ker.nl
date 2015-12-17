@@ -26,8 +26,8 @@
  * extern int initialize_foobar_device(int, int, int) __init;
  *
  * For initialized data:
- * You should insert __initdata between the variable name and equal
- * sign followed by value, e.g.:
+ * You should insert __initdata or __initconst between the variable name
+ * and equal sign followed by value, e.g.:
  *
  * static int init_variable __initdata = 0;
  * static const char linux_logo[] __initconst = { 0x32, 0x36, ... };
@@ -35,8 +35,6 @@
  * Don't forget to initialize data not at file scope, i.e. within a function,
  * as gcc otherwise puts the data into the bss section and not into the init
  * section.
- * 
- * Also note, that this data cannot be "const".
  */
 
 /* These are for everybody (although not all archs will actually
@@ -93,21 +91,13 @@
 
 #define __exit          __section(.exit.text) __exitused __cold notrace
 
-/* Used for HOTPLUG */
-#define __devinit        __section(.devinit.text) __cold notrace
-#define __devinitdata    __section(.devinit.data)
-#define __devinitconst   __section(.devinit.rodata)
-#define __devexit        __section(.devexit.text) __exitused __cold notrace
-#define __devexitdata    __section(.devexit.data)
-#define __devexitconst   __section(.devexit.rodata)
-
-/* Used for HOTPLUG_CPU */
-#define __cpuinit        __section(.cpuinit.text) __cold notrace
-#define __cpuinitdata    __section(.cpuinit.data)
-#define __cpuinitconst   __constsection(.cpuinit.rodata)
-#define __cpuexit        __section(.cpuexit.text) __exitused __cold notrace
-#define __cpuexitdata    __section(.cpuexit.data)
-#define __cpuexitconst   __constsection(.cpuexit.rodata)
+/* temporary, until all users are removed */
+#define __cpuinit
+#define __cpuinitdata
+#define __cpuinitconst
+#define __cpuexit
+#define __cpuexitdata
+#define __cpuexitconst
 
 /* Used for MEMORY_HOTPLUG */
 #define __meminit        __section(.meminit.text) __cold notrace
@@ -126,13 +116,8 @@
 #define __INITRODATA	.section	".init.rodata","a",%progbits
 #define __FINITDATA	.previous
 
-#define __DEVINIT        .section	".devinit.text", "ax"
-#define __DEVINITDATA    .section	".devinit.data", "aw"
-#define __DEVINITRODATA  .section	".devinit.rodata", "a"
-
-#define __CPUINIT        .section	".cpuinit.text", "ax"
-#define __CPUINITDATA    .section	".cpuinit.data", "aw"
-#define __CPUINITRODATA  .section	".cpuinit.rodata", "a"
+/* temporary, until all users are removed */
+#define __CPUINIT
 
 #define __MEMINIT        .section	".meminit.text", "ax"
 #define __MEMINITDATA    .section	".meminit.data", "aw"
@@ -166,6 +151,7 @@ extern unsigned int reset_devices;
 void setup_arch(char **);
 void prepare_namespace(void);
 void __init load_default_modules(void);
+int __init init_rootfs(void);
 
 extern void (*late_time_init)(void);
 
@@ -176,6 +162,23 @@ extern bool initcall_debug;
 #ifndef MODULE
 
 #ifndef __ASSEMBLY__
+
+#ifdef CONFIG_LTO
+/* Work around a LTO gcc problem: when there is no reference to a variable
+ * in a module it will be moved to the end of the program. This causes
+ * reordering of initcalls which the kernel does not like.
+ * Add a dummy reference function to avoid this. The function is
+ * deleted by the linker.
+ */
+#define LTO_REFERENCE_INITCALL(x) \
+	; /* yes this is needed */			\
+	static __used __exit void *reference_##x(void)	\
+	{						\
+		return &x;				\
+	}
+#else
+#define LTO_REFERENCE_INITCALL(x)
+#endif
 
 /* initcalls are now grouped by functionality into separate 
  * subsections. Ordering inside the subsections is determined
@@ -189,7 +192,8 @@ extern bool initcall_debug;
 
 #define __define_initcall(fn, id) \
 	static initcall_t __initcall_##fn##id __used \
-	__attribute__((__section__(".initcall" #id ".init"))) = fn
+	__attribute__((__section__(".initcall" #id ".init"))) = fn; \
+	LTO_REFERENCE_INITCALL(__initcall_##fn##id)
 
 /*
  * Early initcalls run before initializing SMP.
@@ -236,12 +240,6 @@ extern bool initcall_debug;
 	static initcall_t __initcall_##fn \
 	__used __section(.security_initcall.init) = fn
 
-#ifdef CONFIG_DEFERRED_INITCALLS
-#define deferred_initcall(fn, id) \
-	static initcall_t __initcall_##fn##id __used \
-	__attribute__((__section__(".deferred_initcall" #id ".init"))) = fn
-#endif
-
 struct obs_kernel_param {
 	const char *str;
 	int (*setup_func)(char *);
@@ -255,20 +253,40 @@ struct obs_kernel_param {
  * obs_kernel_param "array" too far apart in .init.setup.
  */
 #define __setup_param(str, unique_id, fn, early)			\
-	static const char __setup_str_##unique_id[] __initconst	\
-		__aligned(1) = str; \
-	static struct obs_kernel_param __setup_##unique_id	\
-		__used __section(.init.setup)			\
-		__attribute__((aligned((sizeof(long)))))	\
+	static const char __setup_str_##unique_id[] __initconst		\
+		__aligned(1) = str; 					\
+	static struct obs_kernel_param __setup_##unique_id		\
+		__used __section(.init.setup)				\
+		__attribute__((aligned((sizeof(long)))))		\
 		= { __setup_str_##unique_id, fn, early }
 
-#define __setup(str, fn)					\
+#define __setup(str, fn)						\
 	__setup_param(str, fn, fn, 0)
 
-/* NOTE: fn is as per module_param, not __setup!  Emits warning if fn
- * returns non-zero. */
-#define early_param(str, fn)					\
+/*
+ * NOTE: fn is as per module_param, not __setup!
+ * Emits warning if fn returns non-zero.
+ */
+#define early_param(str, fn)						\
 	__setup_param(str, fn, fn, 1)
+
+#define early_param_on_off(str_on, str_off, var, config)		\
+									\
+	int var = IS_ENABLED(config);					\
+									\
+	static int __init parse_##var##_on(char *arg)			\
+	{								\
+		var = 1;						\
+		return 0;						\
+	}								\
+	__setup_param(str_on, parse_##var##_on, parse_##var##_on, 1);	\
+									\
+	static int __init parse_##var##_off(char *arg)			\
+	{								\
+		var = 0;						\
+		return 0;						\
+	}								\
+	__setup_param(str_off, parse_##var##_off, parse_##var##_off, 1)
 
 /* Relies on boot_command_line being set */
 void __init parse_early_param(void);
@@ -284,10 +302,6 @@ void __init parse_early_options(char *cmdline);
  * be one per module.
  */
 #define module_init(x)	__initcall(x);
-#ifdef CONFIG_DEFERRED_INITCALLS
-#define deferred_module_init(fn) deferred_initcall(fn, 0);
-#define deferred_module_init_sync(fn) deferred_initcall(fn, 0s);
-#endif
 
 /**
  * module_exit() - driver exit entry point
@@ -303,16 +317,30 @@ void __init parse_early_options(char *cmdline);
 
 #else /* MODULE */
 
-/* Don't use these in loadable modules, but some people do... */
+/*
+ * In most cases loadable modules do not need custom
+ * initcall levels. There are still some valid cases where
+ * a driver may be needed early if built in, and does not
+ * matter when built as a loadable module. Like bus
+ * snooping debug drivers.
+ */
 #define early_initcall(fn)		module_init(fn)
 #define core_initcall(fn)		module_init(fn)
+#define core_initcall_sync(fn)		module_init(fn)
 #define postcore_initcall(fn)		module_init(fn)
+#define postcore_initcall_sync(fn)	module_init(fn)
 #define arch_initcall(fn)		module_init(fn)
 #define subsys_initcall(fn)		module_init(fn)
+#define subsys_initcall_sync(fn)	module_init(fn)
 #define fs_initcall(fn)			module_init(fn)
+#define fs_initcall_sync(fn)		module_init(fn)
+#define rootfs_initcall(fn)		module_init(fn)
 #define device_initcall(fn)		module_init(fn)
+#define device_initcall_sync(fn)	module_init(fn)
 #define late_initcall(fn)		module_init(fn)
+#define late_initcall_sync(fn)		module_init(fn)
 
+#define console_initcall(fn)		module_init(fn)
 #define security_initcall(fn)		module_init(fn)
 
 /* Each module must use one module_init(). */
@@ -320,10 +348,6 @@ void __init parse_early_options(char *cmdline);
 	static inline initcall_t __inittest(void)		\
 	{ return initfn; }					\
 	int init_module(void) __attribute__((alias(#initfn)));
-
-#ifdef CONFIG_DEFERRED_INITCALLS
-#define deferred_module_init(fn) module_init(fn)
-#endif
 
 /* This is only required if you want to be unloadable. */
 #define module_exit(exitfn)					\
@@ -355,18 +379,6 @@ void __init parse_early_options(char *cmdline);
 #define __INITDATA_OR_MODULE __INITDATA
 #define __INITRODATA_OR_MODULE __INITRODATA
 #endif /*CONFIG_MODULES*/
-
-/* Functions marked as __devexit may be discarded at kernel link time, depending
-   on config options.  Newer versions of binutils detect references from
-   retained sections to discarded sections and flag an error.  Pointers to
-   __devexit functions must use __devexit_p(function_name), the wrapper will
-   insert either the function_name or NULL, depending on the config options.
- */
-#if defined(MODULE) || defined(CONFIG_HOTPLUG)
-#define __devexit_p(x) x
-#else
-#define __devexit_p(x) NULL
-#endif
 
 #ifdef MODULE
 #define __exit_p(x) x

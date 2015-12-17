@@ -5,6 +5,8 @@
  * Author: Dan Magenheimer
  */
 
+#define pr_fmt(fmt) "xen:" KBUILD_MODNAME ": " fmt
+
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/types.h>
@@ -372,7 +374,7 @@ static struct frontswap_ops tmem_frontswap_ops = {
 };
 #endif
 
-static int xen_tmem_init(void)
+static int __init xen_tmem_init(void)
 {
 	if (!xen_domain())
 		return 0;
@@ -388,20 +390,22 @@ static int xen_tmem_init(void)
 				return PTR_ERR(old_ops);
 			s = " (WARNING: frontswap_ops overridden)";
 		}
-		printk(KERN_INFO "frontswap enabled, RAM provided by "
-				 "Xen Transcendent Memory%s\n", s);
+		pr_info("frontswap enabled, RAM provided by Xen Transcendent Memory%s\n",
+			s);
 	}
 #endif
 #ifdef CONFIG_CLEANCACHE
 	BUG_ON(sizeof(struct cleancache_filekey) != sizeof(struct tmem_oid));
 	if (tmem_enabled && cleancache) {
-		char *s = "";
-		struct cleancache_ops *old_ops =
-			cleancache_register_ops(&tmem_cleancache_ops);
-		if (old_ops)
-			s = " (WARNING: cleancache_ops overridden)";
-		printk(KERN_INFO "cleancache enabled, RAM provided by "
-				 "Xen Transcendent Memory%s\n", s);
+		int err;
+
+		err = cleancache_register_ops(&tmem_cleancache_ops);
+		if (err)
+			pr_warn("xen-tmem: failed to enable cleancache: %d\n",
+				err);
+		else
+			pr_info("cleancache enabled, RAM provided by "
+				"Xen Transcendent Memory\n");
 	}
 #endif
 #ifdef CONFIG_XEN_SELFBALLOONING

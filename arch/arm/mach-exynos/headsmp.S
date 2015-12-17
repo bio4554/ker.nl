@@ -1,5 +1,4 @@
 /*
- *  linux/arch/arm/mach-exynos4/headsmp.S
  *
  *  Cloned from linux/arch/arm/mach-realview/headsmp.S
  *
@@ -13,18 +12,14 @@
 #include <linux/linkage.h>
 #include <linux/init.h>
 
-#define MPIDR_HWID_BITMASK 0xFFFFFF
-
-	__CPUINIT
-
 /*
  * exynos4 specific entry point for secondary CPUs.  This provides
  * a "holding pen" into which all secondary cores are held until we're
  * ready for them to initialise.
  */
 ENTRY(exynos4_secondary_startup)
-	mrc	p15, 0, r0, c0, c0, 5	/* read MPIDR */
-	and	r0, r0, #MPIDR_HWID_BITMASK
+	mrc	p15, 0, r0, c0, c0, 5
+	and	r0, r0, #15
 	adr	r4, 1f
 	ldmia	r4, {r5, r6}
 	sub	r4, r4, r5

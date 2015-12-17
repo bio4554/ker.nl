@@ -16,14 +16,12 @@
  */
 
 #include <linux/device.h>
-#include <linux/ion.h>
 #include <linux/slab.h>
 #include <linux/errno.h>
 #include <linux/err.h>
 #include <linux/dma-mapping.h>
-#include <linux/exynos_ion.h>
 
-/* for ion_heap_ops structure */
+#include "ion.h"
 #include "ion_priv.h"
 
 #define ION_CMA_ALLOCATE_FAILED -1
@@ -41,28 +39,6 @@ struct ion_cma_buffer_info {
 	struct sg_table *table;
 };
 
-/*
- * Create scatter-list for the already allocated DMA buffer.
- * This function could be replaced by dma_common_get_sgtable
- * as soon as it will avalaible.
- */
-static int ion_cma_get_sgtable(struct device *dev, struct sg_table *sgt,
-			       void *cpu_addr, dma_addr_t handle, size_t size)
-{
-	struct page *page = phys_to_page(dma_to_phys(dev, handle));
-	struct scatterlist *sg;
-	int ret;
-
-	ret = sg_alloc_table(sgt, 1, GFP_KERNEL);
-	if (unlikely(ret))
-		return ret;
-
-	sg = sgt->sgl;
-	sg_set_page(sg, page, PAGE_ALIGN(size), 0);
-	sg_dma_address(sg) = sg_phys(sg);
-
-	return 0;
-}
 
 /* ION CMA heap operations functions */
 static int ion_cma_allocate(struct ion_heap *heap, struct ion_buffer *buffer,
@@ -81,14 +57,9 @@ static int ion_cma_allocate(struct ion_heap *heap, struct ion_buffer *buffer,
 	if (align > PAGE_SIZE)
 		return -EINVAL;
 
-	if (!ion_is_heap_available(heap, flags, NULL))
-		return -EPERM;
-
 	info = kzalloc(sizeof(struct ion_cma_buffer_info), GFP_KERNEL);
-	if (!info) {
-		dev_err(dev, "Can't allocate buffer info\n");
+	if (!info)
 		return ION_CMA_ALLOCATE_FAILED;
-	}
 
 	info->cpu_addr = dma_alloc_coherent(dev, len, &(info->handle),
 						GFP_HIGHUSER | __GFP_ZERO);
@@ -99,37 +70,14 @@ static int ion_cma_allocate(struct ion_heap *heap, struct ion_buffer *buffer,
 	}
 
 	info->table = kmalloc(sizeof(struct sg_table), GFP_KERNEL);
-	if (!info->table) {
-		dev_err(dev, "Fail to allocate sg table\n");
+	if (!info->table)
 		goto free_mem;
-	}
 
-	if (ion_cma_get_sgtable
+	if (dma_common_get_sgtable
 	    (dev, info->table, info->cpu_addr, info->handle, len))
 		goto free_table;
 	/* keep this for memory release */
 	buffer->priv_virt = info;
-
-#ifdef CONFIG_ARM64
-	if (!ion_buffer_cached(buffer) && !(buffer->flags & ION_FLAG_PROTECTED)) {
-		if (ion_buffer_need_flush_all(buffer))
-			flush_all_cpu_caches();
-		else
-			__flush_dcache_area(page_address(sg_page(info->table->sgl)),
-									len);
-	}
-#else
-	if (!ion_buffer_cached(buffer) && !(buffer->flags & ION_FLAG_PROTECTED)) {
-		if (ion_buffer_need_flush_all(buffer))
-			flush_all_cpu_caches();
-		else
-			dmac_flush_range(page_address(sg_page(info->table->sgl),
-							len, DMA_BIDIRECTIONAL));
-	}
-#endif
-	if (buffer->flags & ION_FLAG_PROTECTED)
-		ion_secure_protect(heap);
-
 	dev_dbg(dev, "Allocate buffer %p\n", buffer);
 	return 0;
 
@@ -155,9 +103,6 @@ static void ion_cma_free(struct ion_buffer *buffer)
 	sg_free_table(info->table);
 	kfree(info->table);
 	kfree(info);
-
-	if (buffer->flags & ION_FLAG_PROTECTED)
-		ion_secure_unprotect(buffer->heap);
 }
 
 /* return physical address in addr */
@@ -188,7 +133,6 @@ static struct sg_table *ion_cma_heap_map_dma(struct ion_heap *heap,
 static void ion_cma_heap_unmap_dma(struct ion_heap *heap,
 				   struct ion_buffer *buffer)
 {
-	return;
 }
 
 static int ion_cma_mmap(struct ion_heap *mapper, struct ion_buffer *buffer,

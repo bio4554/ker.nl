@@ -14,17 +14,8 @@ enum {
 	PM_QOS_RESERVED = 0,
 	PM_QOS_CPU_DMA_LATENCY,
 	PM_QOS_NETWORK_LATENCY,
-	PM_QOS_MEMORY_THROUGHPUT,
-	PM_QOS_DEVICE_THROUGHPUT,
-	PM_QOS_BUS_THROUGHPUT,
-	PM_QOS_BUS_THROUGHPUT_MAX,
 	PM_QOS_NETWORK_THROUGHPUT,
-	PM_QOS_CLUSTER1_FREQ_MIN,
-	PM_QOS_CLUSTER1_FREQ_MAX,
-	PM_QOS_CLUSTER0_FREQ_MIN,
-	PM_QOS_CLUSTER0_FREQ_MAX,
-	PM_QOS_DISPLAY_THROUGHPUT,
-	PM_QOS_CAM_THROUGHPUT,
+	PM_QOS_MEMORY_BANDWIDTH,
 
 	/* insert new class ID */
 	PM_QOS_NUM_CLASSES,
@@ -41,32 +32,20 @@ enum pm_qos_flags_status {
 
 #define PM_QOS_CPU_DMA_LAT_DEFAULT_VALUE	(2000 * USEC_PER_SEC)
 #define PM_QOS_NETWORK_LAT_DEFAULT_VALUE	(2000 * USEC_PER_SEC)
-#define PM_QOS_MEMORY_THROUGHPUT_DEFAULT_VALUE	0
-#define PM_QOS_DEVICE_THROUGHPUT_DEFAULT_VALUE	0
-#define PM_QOS_BUS_THROUGHPUT_DEFAULT_VALUE	0
-#define PM_QOS_BUS_THROUGHPUT_MAX_DEFAULT_VALUE	INT_MAX
-#define PM_QOS_DISPLAY_THROUGHPUT_DEFAULT_VALUE	0
-#define PM_QOS_CAM_THROUGHPUT_DEFAULT_VALUE	0
 #define PM_QOS_NETWORK_THROUGHPUT_DEFAULT_VALUE	0
-#define PM_QOS_DEV_LAT_DEFAULT_VALUE		0
-#define PM_QOS_CLUSTER1_FREQ_MIN_DEFAULT_VALUE	0
-#define PM_QOS_CLUSTER1_FREQ_MAX_DEFAULT_VALUE	INT_MAX
-#define PM_QOS_CLUSTER0_FREQ_MIN_DEFAULT_VALUE	0
-#define PM_QOS_CLUSTER0_FREQ_MAX_DEFAULT_VALUE	INT_MAX
+#define PM_QOS_MEMORY_BANDWIDTH_DEFAULT_VALUE	0
+#define PM_QOS_RESUME_LATENCY_DEFAULT_VALUE	0
+#define PM_QOS_LATENCY_TOLERANCE_DEFAULT_VALUE	0
+#define PM_QOS_LATENCY_TOLERANCE_NO_CONSTRAINT	(-1)
+#define PM_QOS_LATENCY_ANY			((s32)(~(__u32)0 >> 1))
 
 #define PM_QOS_FLAG_NO_POWER_OFF	(1 << 0)
 #define PM_QOS_FLAG_REMOTE_WAKEUP	(1 << 1)
-
-#define pm_qos_add_request(arg...)	do {				\
-	pm_qos_add_request_trace((char *)__func__, __LINE__, ##arg);	\
-} while(0)
 
 struct pm_qos_request {
 	struct plist_node node;
 	int pm_qos_class;
 	struct delayed_work work; /* for pm_qos_update_request_timeout */
-	char *func;
-	unsigned int line;
 };
 
 struct pm_qos_flags_request {
@@ -75,7 +54,8 @@ struct pm_qos_flags_request {
 };
 
 enum dev_pm_qos_req_type {
-	DEV_PM_QOS_LATENCY = 1,
+	DEV_PM_QOS_RESUME_LATENCY = 1,
+	DEV_PM_QOS_LATENCY_TOLERANCE,
 	DEV_PM_QOS_FLAGS,
 };
 
@@ -92,8 +72,7 @@ enum pm_qos_type {
 	PM_QOS_UNITIALIZED,
 	PM_QOS_MAX,		/* return the largest value */
 	PM_QOS_MIN,		/* return the smallest value */
-	PM_QOS_SUM,		/* return sum of values greater than zero */
-	PM_QOS_FORCE_MAX,
+	PM_QOS_SUM		/* return the sum */
 };
 
 /*
@@ -105,6 +84,7 @@ struct pm_qos_constraints {
 	struct plist_head list;
 	s32 target_value;	/* Do not change to 64 bit */
 	s32 default_value;
+	s32 no_constraint_value;
 	enum pm_qos_type type;
 	struct blocking_notifier_head *notifiers;
 };
@@ -115,9 +95,11 @@ struct pm_qos_flags {
 };
 
 struct dev_pm_qos {
-	struct pm_qos_constraints latency;
+	struct pm_qos_constraints resume_latency;
+	struct pm_qos_constraints latency_tolerance;
 	struct pm_qos_flags flags;
-	struct dev_pm_qos_request *latency_req;
+	struct dev_pm_qos_request *resume_latency_req;
+	struct dev_pm_qos_request *latency_tolerance_req;
 	struct dev_pm_qos_request *flags_req;
 };
 
@@ -135,13 +117,10 @@ static inline int dev_pm_qos_request_active(struct dev_pm_qos_request *req)
 
 int pm_qos_update_target(struct pm_qos_constraints *c, struct plist_node *node,
 			 enum pm_qos_req_action action, int value);
-int pm_qos_update_constraints(int pm_qos_class,
-			struct pm_qos_constraints *constraints);
 bool pm_qos_update_flags(struct pm_qos_flags *pqf,
 			 struct pm_qos_flags_request *req,
 			 enum pm_qos_req_action action, s32 val);
-void pm_qos_add_request_trace(char *func, unsigned int line,
-			struct pm_qos_request *req, int pm_qos_class,
+void pm_qos_add_request(struct pm_qos_request *req, int pm_qos_class,
 			s32 value);
 void pm_qos_update_request(struct pm_qos_request *req,
 			   s32 new_value);
@@ -173,7 +152,25 @@ int dev_pm_qos_remove_global_notifier(struct notifier_block *notifier);
 void dev_pm_qos_constraints_init(struct device *dev);
 void dev_pm_qos_constraints_destroy(struct device *dev);
 int dev_pm_qos_add_ancestor_request(struct device *dev,
-				    struct dev_pm_qos_request *req, s32 value);
+				    struct dev_pm_qos_request *req,
+				    enum dev_pm_qos_req_type type, s32 value);
+int dev_pm_qos_expose_latency_limit(struct device *dev, s32 value);
+void dev_pm_qos_hide_latency_limit(struct device *dev);
+int dev_pm_qos_expose_flags(struct device *dev, s32 value);
+void dev_pm_qos_hide_flags(struct device *dev);
+int dev_pm_qos_update_flags(struct device *dev, s32 mask, bool set);
+s32 dev_pm_qos_get_user_latency_tolerance(struct device *dev);
+int dev_pm_qos_update_user_latency_tolerance(struct device *dev, s32 val);
+
+static inline s32 dev_pm_qos_requested_resume_latency(struct device *dev)
+{
+	return dev->power.qos->resume_latency_req->data.pnode.prio;
+}
+
+static inline s32 dev_pm_qos_requested_flags(struct device *dev)
+{
+	return dev->power.qos->flags_req->data.flr.flags;
+}
 #else
 static inline enum pm_qos_flags_status __dev_pm_qos_flags(struct device *dev,
 							  s32 mask)
@@ -216,27 +213,10 @@ static inline void dev_pm_qos_constraints_destroy(struct device *dev)
 	dev->power.power_state = PMSG_INVALID;
 }
 static inline int dev_pm_qos_add_ancestor_request(struct device *dev,
-				    struct dev_pm_qos_request *req, s32 value)
+						  struct dev_pm_qos_request *req,
+						  enum dev_pm_qos_req_type type,
+						  s32 value)
 			{ return 0; }
-#endif
-
-#ifdef CONFIG_PM_RUNTIME
-int dev_pm_qos_expose_latency_limit(struct device *dev, s32 value);
-void dev_pm_qos_hide_latency_limit(struct device *dev);
-int dev_pm_qos_expose_flags(struct device *dev, s32 value);
-void dev_pm_qos_hide_flags(struct device *dev);
-int dev_pm_qos_update_flags(struct device *dev, s32 mask, bool set);
-
-static inline s32 dev_pm_qos_requested_latency(struct device *dev)
-{
-	return dev->power.qos->latency_req->data.pnode.prio;
-}
-
-static inline s32 dev_pm_qos_requested_flags(struct device *dev)
-{
-	return dev->power.qos->flags_req->data.flr.flags;
-}
-#else
 static inline int dev_pm_qos_expose_latency_limit(struct device *dev, s32 value)
 			{ return 0; }
 static inline void dev_pm_qos_hide_latency_limit(struct device *dev) {}
@@ -245,8 +225,12 @@ static inline int dev_pm_qos_expose_flags(struct device *dev, s32 value)
 static inline void dev_pm_qos_hide_flags(struct device *dev) {}
 static inline int dev_pm_qos_update_flags(struct device *dev, s32 m, bool set)
 			{ return 0; }
+static inline s32 dev_pm_qos_get_user_latency_tolerance(struct device *dev)
+			{ return PM_QOS_LATENCY_TOLERANCE_NO_CONSTRAINT; }
+static inline int dev_pm_qos_update_user_latency_tolerance(struct device *dev, s32 val)
+			{ return 0; }
 
-static inline s32 dev_pm_qos_requested_latency(struct device *dev) { return 0; }
+static inline s32 dev_pm_qos_requested_resume_latency(struct device *dev) { return 0; }
 static inline s32 dev_pm_qos_requested_flags(struct device *dev) { return 0; }
 #endif
 

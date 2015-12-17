@@ -11,7 +11,6 @@
 #include <linux/init.h>
 #include <linux/types.h>
 #include <linux/errno.h>
-#include <linux/sched_clock.h>
 
 #include <asm/delay.h>
 
@@ -40,9 +39,6 @@ int __init arch_timer_arch_init(void)
 		return -ENXIO;
 
 	arch_timer_delay_timer_register();
-
-	/* Cache the sched_clock multiplier to save a divide in the hot path. */
-	sched_clock_register(arch_timer_read_counter, 56, arch_timer_rate);
 
 	return 0;
 }

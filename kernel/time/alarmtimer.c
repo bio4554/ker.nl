@@ -71,7 +71,7 @@ struct rtc_device *alarmtimer_get_rtcdev(void)
 
 	return ret;
 }
-
+EXPORT_SYMBOL_GPL(alarmtimer_get_rtcdev);
 
 static int alarmtimer_rtc_add_device(struct device *dev,
 				struct class_interface *class_intf)
@@ -204,6 +204,7 @@ ktime_t alarm_expires_remaining(const struct alarm *alarm)
 	struct alarm_base *base = &alarm_bases[alarm->type];
 	return ktime_sub(alarm->node.expires, base->gettime());
 }
+EXPORT_SYMBOL_GPL(alarm_expires_remaining);
 
 #ifdef CONFIG_RTC_CLASS
 /**
@@ -309,6 +310,7 @@ void alarm_init(struct alarm *alarm, enum alarmtimer_type type,
 	alarm->type = type;
 	alarm->state = ALARMTIMER_STATE_INACTIVE;
 }
+EXPORT_SYMBOL_GPL(alarm_init);
 
 /**
  * alarm_start - Sets an absolute alarm to fire
@@ -329,6 +331,7 @@ int alarm_start(struct alarm *alarm, ktime_t start)
 	spin_unlock_irqrestore(&base->lock, flags);
 	return ret;
 }
+EXPORT_SYMBOL_GPL(alarm_start);
 
 /**
  * alarm_start_relative - Sets a relative alarm to fire
@@ -342,6 +345,7 @@ int alarm_start_relative(struct alarm *alarm, ktime_t start)
 	start = ktime_add(start, base->gettime());
 	return alarm_start(alarm, start);
 }
+EXPORT_SYMBOL_GPL(alarm_start_relative);
 
 void alarm_restart(struct alarm *alarm)
 {
@@ -354,6 +358,7 @@ void alarm_restart(struct alarm *alarm)
 	alarmtimer_enqueue(base, alarm);
 	spin_unlock_irqrestore(&base->lock, flags);
 }
+EXPORT_SYMBOL_GPL(alarm_restart);
 
 /**
  * alarm_try_to_cancel - Tries to cancel an alarm timer
@@ -375,6 +380,7 @@ int alarm_try_to_cancel(struct alarm *alarm)
 	spin_unlock_irqrestore(&base->lock, flags);
 	return ret;
 }
+EXPORT_SYMBOL_GPL(alarm_try_to_cancel);
 
 
 /**
@@ -392,6 +398,7 @@ int alarm_cancel(struct alarm *alarm)
 		cpu_relax();
 	}
 }
+EXPORT_SYMBOL_GPL(alarm_cancel);
 
 
 u64 alarm_forward(struct alarm *alarm, ktime_t now, ktime_t interval)
@@ -424,6 +431,7 @@ u64 alarm_forward(struct alarm *alarm, ktime_t now, ktime_t interval)
 	alarm->node.expires = ktime_add(alarm->node.expires, interval);
 	return overrun;
 }
+EXPORT_SYMBOL_GPL(alarm_forward);
 
 u64 alarm_forward_now(struct alarm *alarm, ktime_t interval)
 {
@@ -431,7 +439,7 @@ u64 alarm_forward_now(struct alarm *alarm, ktime_t interval)
 
 	return alarm_forward(alarm, base->gettime(), interval);
 }
-
+EXPORT_SYMBOL_GPL(alarm_forward_now);
 
 
 /**
@@ -541,18 +549,22 @@ static int alarm_timer_create(struct k_itimer *new_timer)
  * @new_timer: k_itimer pointer
  * @cur_setting: itimerspec data to fill
  *
- * Copies the itimerspec data out from the k_itimer
+ * Copies out the current itimerspec data
  */
 static void alarm_timer_get(struct k_itimer *timr,
 				struct itimerspec *cur_setting)
 {
-	memset(cur_setting, 0, sizeof(struct itimerspec));
+	ktime_t relative_expiry_time =
+		alarm_expires_remaining(&(timr->it.alarm.alarmtimer));
 
-	cur_setting->it_interval =
-			ktime_to_timespec(timr->it.alarm.interval);
-	cur_setting->it_value =
-		ktime_to_timespec(timr->it.alarm.alarmtimer.node.expires);
-	return;
+	if (ktime_to_ns(relative_expiry_time) > 0) {
+		cur_setting->it_value = ktime_to_timespec(relative_expiry_time);
+	} else {
+		cur_setting->it_value.tv_sec = 0;
+		cur_setting->it_value.tv_nsec = 0;
+	}
+
+	cur_setting->it_interval = ktime_to_timespec(timr->it.alarm.interval);
 }
 
 /**
@@ -614,59 +626,6 @@ static int alarm_timer_set(struct k_itimer *timr, int flags,
 	alarm_start(&timr->it.alarm.alarmtimer, exp);
 	return 0;
 }
-
-#if defined(CONFIG_RTC_ALARM_BOOT)
-#define BOOTALM_BIT_EN		0
-#define BOOTALM_BIT_YEAR	1
-#define BOOTALM_BIT_MONTH	5
-#define BOOTALM_BIT_DAY		7
-#define BOOTALM_BIT_HOUR	9
-#define BOOTALM_BIT_MIN		11
-#define BOOTALM_BIT_TOTAL	13
-
-int alarm_set_alarm_boot(char *alarm_data)
-{
-	struct rtc_wkalrm alm;
-	int ret;
-	char buf_ptr[BOOTALM_BIT_TOTAL + 1];
-
-	printk("alarm_set_alarm_boot: AlarmManager\n");
-
-	if (!rtcdev) {
-		printk("alarm_set_alarm_boot: no RTC, time will be lost on reboot\n");
-		return -1;
-	}
-
-	strlcpy(buf_ptr, alarm_data, BOOTALM_BIT_TOTAL + 1);
-
-	alm.time.tm_sec = 0;
-
-	alm.time.tm_min = (buf_ptr[BOOTALM_BIT_MIN] - '0') * 10
-	    + (buf_ptr[BOOTALM_BIT_MIN + 1] - '0');
-	alm.time.tm_hour = (buf_ptr[BOOTALM_BIT_HOUR] - '0') * 10
-	    + (buf_ptr[BOOTALM_BIT_HOUR + 1] - '0');
-	alm.time.tm_mday = (buf_ptr[BOOTALM_BIT_DAY] - '0') * 10
-	    + (buf_ptr[BOOTALM_BIT_DAY + 1] - '0');
-	alm.time.tm_mon = (buf_ptr[BOOTALM_BIT_MONTH] - '0') * 10
-	    + (buf_ptr[BOOTALM_BIT_MONTH + 1] - '0');
-	alm.time.tm_year = (buf_ptr[BOOTALM_BIT_YEAR] - '0') * 1000
-	    + (buf_ptr[BOOTALM_BIT_YEAR + 1] - '0') * 100
-	    + (buf_ptr[BOOTALM_BIT_YEAR + 2] - '0') * 10
-	    + (buf_ptr[BOOTALM_BIT_YEAR + 3] - '0');
-	alm.enabled = (*buf_ptr == '1');
-
-	alm.time.tm_mon -= 1;
-	alm.time.tm_year -= 1900;
-
-	printk(KERN_INFO "%s: %d/%d/%d %d:%d:%d(%d)\n", __func__,
-		1900 + alm.time.tm_year, 1 + alm.time.tm_mon, alm.time.tm_mday,
-		alm.time.tm_hour, alm.time.tm_min, alm.time.tm_sec, alm.time.tm_wday);
-
-	ret = rtc_set_alarm_boot(rtcdev, &alm);
-
-	return ret;
-}
-#endif
 
 /**
  * alarmtimer_nsleep_wakeup - Wakeup function for alarm_timer_nsleep
@@ -829,7 +788,7 @@ static int alarm_timer_nsleep(const clockid_t which_clock, int flags,
 			goto out;
 	}
 
-	restart = &current_thread_info()->restart_block;
+	restart = &current->restart_block;
 	restart->fn = alarm_timer_nsleep_restart;
 	restart->nanosleep.clockid = type;
 	restart->nanosleep.expires = exp.tv64;

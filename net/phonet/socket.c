@@ -425,15 +425,15 @@ out:
 	return err;
 }
 
-static int pn_socket_sendmsg(struct kiocb *iocb, struct socket *sock,
-				struct msghdr *m, size_t total_len)
+static int pn_socket_sendmsg(struct socket *sock, struct msghdr *m,
+			     size_t total_len)
 {
 	struct sock *sk = sock->sk;
 
 	if (pn_socket_autobind(sock))
 		return -EAGAIN;
 
-	return sk->sk_prot->sendmsg(iocb, sk, m, total_len);
+	return sk->sk_prot->sendmsg(sk, m, total_len);
 }
 
 const struct proto_ops phonet_dgram_ops = {
@@ -791,7 +791,7 @@ static int pn_res_seq_show(struct seq_file *seq, void *v)
 		struct sock **psk = v;
 		struct sock *sk = *psk;
 
-		seq_printf(seq, "%02X %5d %lu",
+		seq_printf(seq, "%02X %5u %lu",
 			   (int) (psk - pnres.sk),
 			   from_kuid_munged(seq_user_ns(seq), sock_i_uid(sk)),
 			   sock_i_ino(sk));

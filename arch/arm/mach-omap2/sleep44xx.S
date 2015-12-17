@@ -10,6 +10,7 @@
  */
 
 #include <linux/linkage.h>
+#include <asm/assembler.h>
 #include <asm/smp_scu.h>
 #include <asm/memory.h>
 #include <asm/hardware/cache-l2x0.h>
@@ -33,6 +34,8 @@ ppa_zero_params:
 
 ppa_por_params:
 	.word		1, 0
+
+#ifdef CONFIG_ARCH_OMAP4
 
 /*
  * =============================
@@ -326,13 +329,13 @@ skip_l2en:
 
 	b	cpu_resume			@ Jump to generic resume
 ENDPROC(omap4_cpu_resume)
-#endif
+#endif	/* CONFIG_ARCH_OMAP4 */
 
-#ifndef CONFIG_OMAP4_ERRATA_I688
+#endif	/* defined(CONFIG_SMP) && defined(CONFIG_PM) */
+
 ENTRY(omap_bus_sync)
-	mov	pc, lr
+	ret	lr
 ENDPROC(omap_bus_sync)
-#endif
 
 ENTRY(omap_do_wfi)
 	stmfd	sp!, {lr}

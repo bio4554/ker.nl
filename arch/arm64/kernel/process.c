@@ -21,6 +21,7 @@
 #include <stdarg.h>
 
 #include <linux/compat.h>
+#include <linux/efi.h>
 #include <linux/export.h>
 #include <linux/sched.h>
 #include <linux/kernel.h>
@@ -34,8 +35,6 @@
 #include <linux/kallsyms.h>
 #include <linux/init.h>
 #include <linux/cpu.h>
-#include <linux/cpuidle.h>
-#include <linux/leds.h>
 #include <linux/elfcore.h>
 #include <linux/pm.h>
 #include <linux/tick.h>
@@ -45,7 +44,6 @@
 #include <linux/hw_breakpoint.h>
 #include <linux/personality.h>
 #include <linux/notifier.h>
-#include <linux/exynos-ss.h>
 
 #include <asm/compat.h>
 #include <asm/cacheflush.h>
@@ -74,8 +72,7 @@ void soft_restart(unsigned long addr)
 void (*pm_power_off)(void);
 EXPORT_SYMBOL_GPL(pm_power_off);
 
-void (*arm_pm_restart)(char str, const char *cmd);
-EXPORT_SYMBOL_GPL(arm_pm_restart);
+void (*arm_pm_restart)(enum reboot_mode reboot_mode, const char *cmd);
 
 /*
  * This is our default idle handler.
@@ -86,22 +83,8 @@ void arch_cpu_idle(void)
 	 * This should do all the clock switching and wait for interrupt
 	 * tricks
 	 */
-	if (cpuidle_idle_call()) {
-		cpu_do_idle();
-		local_irq_enable();
-	}
-}
-
-void arch_cpu_idle_enter(void)
-{
-	idle_notifier_call_chain(IDLE_START);
-	ledtrig_cpu(CPU_LED_IDLE_START);
-}
-
-void arch_cpu_idle_exit(void)
-{
-	ledtrig_cpu(CPU_LED_IDLE_END);
-	idle_notifier_call_chain(IDLE_END);
+	cpu_do_idle();
+	local_irq_enable();
 }
 
 #ifdef CONFIG_HOTPLUG_CPU
@@ -168,11 +151,18 @@ void machine_restart(char *cmd)
 	local_irq_disable();
 	smp_send_stop();
 
-	/* Now call the architecture specific reboot code. */
-	exynos_ss_post_reboot();
+	/*
+	 * UpdateCapsule() depends on the system being reset via
+	 * ResetSystem().
+	 */
+	if (efi_enabled(EFI_RUNTIME_SERVICES))
+		efi_reboot(reboot_mode, NULL);
 
+	/* Now call the architecture specific reboot code. */
 	if (arm_pm_restart)
-		arm_pm_restart('h', cmd);
+		arm_pm_restart(reboot_mode, cmd);
+	else
+		do_kernel_restart(cmd);
 
 	/*
 	 * Whoops - the architecture was unable to reboot.
@@ -229,19 +219,17 @@ static void show_data(unsigned long addr, int nbytes, const char *name)
 
 static void show_extra_register_data(struct pt_regs *regs, int nbytes)
 {
-	int i;
-	char name[4];
 	mm_segment_t fs;
+	unsigned int i;
 
 	fs = get_fs();
 	set_fs(KERNEL_DS);
-
 	show_data(regs->pc - nbytes, nbytes * 2, "PC");
 	show_data(regs->regs[30] - nbytes, nbytes * 2, "LR");
 	show_data(regs->sp - nbytes, nbytes * 2, "SP");
-
-	for (i = 0; i < ARRAY_SIZE(regs->regs) - 1; i++) {
-		snprintf(name,ARRAY_SIZE(name), "X%d", i);
+	for (i = 0; i < 30; i++) {
+		char name[4];
+		snprintf(name, sizeof(name), "X%u", i);
 		show_data(regs->regs[i] - nbytes, nbytes * 2, name);
 	}
 	set_fs(fs);
@@ -260,16 +248,6 @@ void __show_regs(struct pt_regs *regs)
 		lr = regs->regs[30];
 		sp = regs->sp;
 		top_reg = 29;
-
-	}
-	if (!user_mode(regs)) {
-		exynos_ss_save_context(regs);
-		/*
-		 *  If you want to see more kernel events after panic,
-		 *  you should modify exynos_ss_set_enable's function 2nd parameter
-		 *  to true.
-		 */
-		exynos_ss_set_enable("log_kevents", false);
 	}
 
 	show_regs_print_info(KERN_DEFAULT);
@@ -283,7 +261,6 @@ void __show_regs(struct pt_regs *regs)
 		if (i % 2 == 0)
 			printk("\n");
 	}
-
 	if (!user_mode(regs))
 		show_extra_register_data(regs, 128);
 	printk("\n");
@@ -332,7 +309,7 @@ void release_thread(struct task_struct *dead_task)
 
 int arch_dup_task_struct(struct task_struct *dst, struct task_struct *src)
 {
-	fpsimd_save_state(&current->thread.fpsimd_state);
+	fpsimd_preserve_current_state();
 	*dst = *src;
 	return 0;
 }
@@ -413,8 +390,8 @@ static void tls_thread_switch(struct task_struct *next)
 /*
  * Thread switching.
  */
-struct task_struct *__sched
-__switch_to(struct task_struct *prev, struct task_struct *next)
+struct task_struct *__switch_to(struct task_struct *prev,
+				struct task_struct *next)
 {
 	struct task_struct *last;
 
@@ -474,9 +451,4 @@ static unsigned long randomize_base(unsigned long base)
 unsigned long arch_randomize_brk(struct mm_struct *mm)
 {
 	return randomize_base(mm->brk);
-}
-
-unsigned long randomize_et_dyn(unsigned long base)
-{
-	return randomize_base(base);
 }

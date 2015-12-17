@@ -2,7 +2,7 @@
  * arch/arm/common/bL_switcher_dummy_if.c -- b.L switcher dummy interface
  *
  * Created by:	Nicolas Pitre, November 2012
- * Copyright:	(C) 2012  Linaro Limited
+ * Copyright:	(C) 2012-2013  Linaro Limited
  *
  * Dummy interface to user space for debugging purpose only.
  *
@@ -34,7 +34,7 @@ static ssize_t bL_switcher_write(struct file *file, const char __user *buf,
 		return -EFAULT;
 
 	/* format: <cpu#>,<cluster#> */
-	if (val[0] < '0' || val[0] > '4' ||
+	if (val[0] < '0' || val[0] > '9' ||
 	    val[1] != ',' ||
 	    val[2] < '0' || val[2] > '1')
 		return -EINVAL;
@@ -52,9 +52,9 @@ static const struct file_operations bL_switcher_fops = {
 };
 
 static struct miscdevice bL_switcher_device = {
-        MISC_DYNAMIC_MINOR,
-        "b.L_switcher",
-        &bL_switcher_fops
+	MISC_DYNAMIC_MINOR,
+	"b.L_switcher",
+	&bL_switcher_fops
 };
 
 static int __init bL_switcher_dummy_if_init(void)

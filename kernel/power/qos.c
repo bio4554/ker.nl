@@ -46,6 +46,7 @@
 
 #include <linux/uaccess.h>
 #include <linux/export.h>
+#include <trace/events/power.h>
 
 /*
  * locking rule: all changes to constraints or notifiers lists
@@ -67,6 +68,7 @@ static struct pm_qos_constraints cpu_dma_constraints = {
 	.list = PLIST_HEAD_INIT(cpu_dma_constraints.list),
 	.target_value = PM_QOS_CPU_DMA_LAT_DEFAULT_VALUE,
 	.default_value = PM_QOS_CPU_DMA_LAT_DEFAULT_VALUE,
+	.no_constraint_value = PM_QOS_CPU_DMA_LAT_DEFAULT_VALUE,
 	.type = PM_QOS_MIN,
 	.notifiers = &cpu_dma_lat_notifier,
 };
@@ -80,6 +82,7 @@ static struct pm_qos_constraints network_lat_constraints = {
 	.list = PLIST_HEAD_INIT(network_lat_constraints.list),
 	.target_value = PM_QOS_NETWORK_LAT_DEFAULT_VALUE,
 	.default_value = PM_QOS_NETWORK_LAT_DEFAULT_VALUE,
+	.no_constraint_value = PM_QOS_NETWORK_LAT_DEFAULT_VALUE,
 	.type = PM_QOS_MIN,
 	.notifiers = &network_lat_notifier,
 };
@@ -88,63 +91,13 @@ static struct pm_qos_object network_lat_pm_qos = {
 	.name = "network_latency",
 };
 
-static BLOCKING_NOTIFIER_HEAD(memory_throughput_notifier);
-static struct pm_qos_constraints memory_tput_constraints = {
-	.list = PLIST_HEAD_INIT(memory_tput_constraints.list),
-	.target_value = PM_QOS_MEMORY_THROUGHPUT_DEFAULT_VALUE,
-	.default_value = PM_QOS_MEMORY_THROUGHPUT_DEFAULT_VALUE,
-	.type = PM_QOS_SUM,
-	.notifiers = &memory_throughput_notifier,
-};
-static struct pm_qos_object memory_throughput_pm_qos = {
-	.constraints = &memory_tput_constraints,
-	.name = "memory_throughput",
-};
-
-static BLOCKING_NOTIFIER_HEAD(device_throughput_notifier);
-static struct pm_qos_constraints device_tput_constraints = {
-	.list = PLIST_HEAD_INIT(device_tput_constraints.list),
-	.target_value = PM_QOS_DEVICE_THROUGHPUT_DEFAULT_VALUE,
-	.default_value = PM_QOS_DEVICE_THROUGHPUT_DEFAULT_VALUE,
-	.type = PM_QOS_FORCE_MAX,
-	.notifiers = &device_throughput_notifier,
-};
-static struct pm_qos_object device_throughput_pm_qos = {
-	.constraints = &device_tput_constraints,
-	.name = "device_throughput",
-};
-
-static BLOCKING_NOTIFIER_HEAD(bus_throughput_notifier);
-static struct pm_qos_constraints bus_tput_constraints = {
-	.list = PLIST_HEAD_INIT(bus_tput_constraints.list),
-	.target_value = PM_QOS_BUS_THROUGHPUT_DEFAULT_VALUE,
-	.default_value = PM_QOS_BUS_THROUGHPUT_DEFAULT_VALUE,
-	.type = PM_QOS_MAX,
-	.notifiers = &bus_throughput_notifier,
-};
-static struct pm_qos_object bus_throughput_pm_qos = {
-	.constraints = &bus_tput_constraints,
-	.name = "bus_throughput",
-};
-
-static BLOCKING_NOTIFIER_HEAD(bus_throughput_max_notifier);
-static struct pm_qos_constraints bus_tput_max_constraints = {
-	.list = PLIST_HEAD_INIT(bus_tput_max_constraints.list),
-	.target_value = PM_QOS_BUS_THROUGHPUT_MAX_DEFAULT_VALUE,
-	.default_value = PM_QOS_BUS_THROUGHPUT_MAX_DEFAULT_VALUE,
-	.type = PM_QOS_MIN,
-	.notifiers = &bus_throughput_max_notifier,
-};
-static struct pm_qos_object bus_throughput_max_pm_qos = {
-	.constraints = &bus_tput_max_constraints,
-	.name = "bus_throughput_max",
-};
 
 static BLOCKING_NOTIFIER_HEAD(network_throughput_notifier);
 static struct pm_qos_constraints network_tput_constraints = {
 	.list = PLIST_HEAD_INIT(network_tput_constraints.list),
 	.target_value = PM_QOS_NETWORK_THROUGHPUT_DEFAULT_VALUE,
 	.default_value = PM_QOS_NETWORK_THROUGHPUT_DEFAULT_VALUE,
+	.no_constraint_value = PM_QOS_NETWORK_THROUGHPUT_DEFAULT_VALUE,
 	.type = PM_QOS_MAX,
 	.notifiers = &network_throughput_notifier,
 };
@@ -153,82 +106,19 @@ static struct pm_qos_object network_throughput_pm_qos = {
 	.name = "network_throughput",
 };
 
-static BLOCKING_NOTIFIER_HEAD(cluster1_freq_min_notifier);
-static struct pm_qos_constraints cluster1_freq_min_constraints = {
-	.list = PLIST_HEAD_INIT(cluster1_freq_min_constraints.list),
-	.target_value = PM_QOS_CLUSTER1_FREQ_MIN_DEFAULT_VALUE,
-	.default_value = PM_QOS_CLUSTER1_FREQ_MIN_DEFAULT_VALUE,
-	.type = PM_QOS_MAX,
-	.notifiers = &cluster1_freq_min_notifier,
-};
-static struct pm_qos_object cluster1_freq_min_pm_qos = {
-	.constraints = &cluster1_freq_min_constraints,
-	.name = "cluster1_freq_min",
-};
 
-static BLOCKING_NOTIFIER_HEAD(cluster1_freq_max_notifier);
-static struct pm_qos_constraints cluster1_freq_max_constraints = {
-	.list = PLIST_HEAD_INIT(cluster1_freq_max_constraints.list),
-	.target_value = PM_QOS_CLUSTER1_FREQ_MAX_DEFAULT_VALUE,
-	.default_value = PM_QOS_CLUSTER1_FREQ_MAX_DEFAULT_VALUE,
-	.type = PM_QOS_MIN,
-	.notifiers = &cluster1_freq_max_notifier,
+static BLOCKING_NOTIFIER_HEAD(memory_bandwidth_notifier);
+static struct pm_qos_constraints memory_bw_constraints = {
+	.list = PLIST_HEAD_INIT(memory_bw_constraints.list),
+	.target_value = PM_QOS_MEMORY_BANDWIDTH_DEFAULT_VALUE,
+	.default_value = PM_QOS_MEMORY_BANDWIDTH_DEFAULT_VALUE,
+	.no_constraint_value = PM_QOS_MEMORY_BANDWIDTH_DEFAULT_VALUE,
+	.type = PM_QOS_SUM,
+	.notifiers = &memory_bandwidth_notifier,
 };
-static struct pm_qos_object cluster1_freq_max_pm_qos = {
-	.constraints = &cluster1_freq_max_constraints,
-	.name = "cluster1_freq_max",
-};
-
-static BLOCKING_NOTIFIER_HEAD(cluster0_freq_min_notifier);
-static struct pm_qos_constraints cluster0_freq_min_constraints = {
-	.list = PLIST_HEAD_INIT(cluster0_freq_min_constraints.list),
-	.target_value = PM_QOS_CLUSTER0_FREQ_MIN_DEFAULT_VALUE,
-	.default_value = PM_QOS_CLUSTER0_FREQ_MIN_DEFAULT_VALUE,
-	.type = PM_QOS_MAX,
-	.notifiers = &cluster0_freq_min_notifier,
-};
-static struct pm_qos_object cluster0_freq_min_pm_qos = {
-	.constraints = &cluster0_freq_min_constraints,
-	.name = "cluster0_freq_min",
-};
-
-static BLOCKING_NOTIFIER_HEAD(cluster0_freq_max_notifier);
-static struct pm_qos_constraints cluster0_freq_max_constraints = {
-	.list = PLIST_HEAD_INIT(cluster0_freq_max_constraints.list),
-	.target_value = PM_QOS_CLUSTER0_FREQ_MAX_DEFAULT_VALUE,
-	.default_value = PM_QOS_CLUSTER0_FREQ_MAX_DEFAULT_VALUE,
-	.type = PM_QOS_MIN,
-	.notifiers = &cluster0_freq_max_notifier,
-};
-static struct pm_qos_object cluster0_freq_max_pm_qos = {
-	.constraints = &cluster0_freq_max_constraints,
-	.name = "cluster0_freq_max",
-};
-
-static BLOCKING_NOTIFIER_HEAD(display_throughput_notifier);
-static struct pm_qos_constraints display_tput_constraints = {
-	.list = PLIST_HEAD_INIT(display_tput_constraints.list),
-	.target_value = PM_QOS_DISPLAY_THROUGHPUT_DEFAULT_VALUE,
-	.default_value = PM_QOS_DISPLAY_THROUGHPUT_DEFAULT_VALUE,
-	.type = PM_QOS_MAX,
-	.notifiers = &display_throughput_notifier,
-};
-static struct pm_qos_object display_throughput_pm_qos = {
-	.constraints = &display_tput_constraints,
-	.name = "display_throughput",
-};
-
-static BLOCKING_NOTIFIER_HEAD(cam_throughput_notifier);
-static struct pm_qos_constraints cam_tput_constraints = {
-	.list = PLIST_HEAD_INIT(cam_tput_constraints.list),
-	.target_value = PM_QOS_CAM_THROUGHPUT_DEFAULT_VALUE,
-	.default_value = PM_QOS_CAM_THROUGHPUT_DEFAULT_VALUE,
-	.type = PM_QOS_MAX,
-	.notifiers = &cam_throughput_notifier,
-};
-static struct pm_qos_object cam_throughput_pm_qos = {
-	.constraints = &cam_tput_constraints,
-	.name = "cam_throughput",
+static struct pm_qos_object memory_bandwidth_pm_qos = {
+	.constraints = &memory_bw_constraints,
+	.name = "memory_bandwidth",
 };
 
 
@@ -236,17 +126,8 @@ static struct pm_qos_object *pm_qos_array[] = {
 	&null_pm_qos,
 	&cpu_dma_pm_qos,
 	&network_lat_pm_qos,
-	&memory_throughput_pm_qos,
-	&device_throughput_pm_qos,
-	&bus_throughput_pm_qos,
-	&bus_throughput_max_pm_qos,
 	&network_throughput_pm_qos,
-	&cluster1_freq_min_pm_qos,
-	&cluster1_freq_max_pm_qos,
-	&cluster0_freq_min_pm_qos,
-	&cluster0_freq_max_pm_qos,
-	&display_throughput_pm_qos,
-	&cam_throughput_pm_qos,
+	&memory_bandwidth_pm_qos,
 };
 
 static ssize_t pm_qos_power_write(struct file *filp, const char __user *buf,
@@ -267,29 +148,24 @@ static const struct file_operations pm_qos_power_fops = {
 /* unlocked internal variant */
 static inline int pm_qos_get_value(struct pm_qos_constraints *c)
 {
-	unsigned int sum = 0;
-	struct plist_node *p;
+	struct plist_node *node;
+	int total_value = 0;
 
 	if (plist_head_empty(&c->list))
-		return c->default_value;
+		return c->no_constraint_value;
 
 	switch (c->type) {
 	case PM_QOS_MIN:
 		return plist_first(&c->list)->prio;
 
 	case PM_QOS_MAX:
-	case PM_QOS_FORCE_MAX:
 		return plist_last(&c->list)->prio;
 
 	case PM_QOS_SUM:
-		plist_for_each(p, &c->list) {
-			if (p->prio < 0)
-				continue;
-			if (sum + p->prio > INT_MAX)
-				return INT_MAX;
-			sum += p->prio;
-		}
-		return sum;
+		plist_for_each(node, &c->list)
+			total_value += node->prio;
+
+		return total_value;
 
 	default:
 		/* runtime check for not using enum */
@@ -308,6 +184,81 @@ static inline void pm_qos_set_value(struct pm_qos_constraints *c, s32 value)
 	c->target_value = value;
 }
 
+static inline int pm_qos_get_value(struct pm_qos_constraints *c);
+static int pm_qos_dbg_show_requests(struct seq_file *s, void *unused)
+{
+	struct pm_qos_object *qos = (struct pm_qos_object *)s->private;
+	struct pm_qos_constraints *c;
+	struct pm_qos_request *req;
+	char *type;
+	unsigned long flags;
+	int tot_reqs = 0;
+	int active_reqs = 0;
+
+	if (IS_ERR_OR_NULL(qos)) {
+		pr_err("%s: bad qos param!\n", __func__);
+		return -EINVAL;
+	}
+	c = qos->constraints;
+	if (IS_ERR_OR_NULL(c)) {
+		pr_err("%s: Bad constraints on qos?\n", __func__);
+		return -EINVAL;
+	}
+
+	/* Lock to ensure we have a snapshot */
+	spin_lock_irqsave(&pm_qos_lock, flags);
+	if (plist_head_empty(&c->list)) {
+		seq_puts(s, "Empty!\n");
+		goto out;
+	}
+
+	switch (c->type) {
+	case PM_QOS_MIN:
+		type = "Minimum";
+		break;
+	case PM_QOS_MAX:
+		type = "Maximum";
+		break;
+	case PM_QOS_SUM:
+		type = "Sum";
+		break;
+	default:
+		type = "Unknown";
+	}
+
+	plist_for_each_entry(req, &c->list, node) {
+		char *state = "Default";
+
+		if ((req->node).prio != c->default_value) {
+			active_reqs++;
+			state = "Active";
+		}
+		tot_reqs++;
+		seq_printf(s, "%d: %d: %s\n", tot_reqs,
+			   (req->node).prio, state);
+	}
+
+	seq_printf(s, "Type=%s, Value=%d, Requests: active=%d / total=%d\n",
+		   type, pm_qos_get_value(c), active_reqs, tot_reqs);
+
+out:
+	spin_unlock_irqrestore(&pm_qos_lock, flags);
+	return 0;
+}
+
+static int pm_qos_dbg_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, pm_qos_dbg_show_requests,
+			   inode->i_private);
+}
+
+static const struct file_operations pm_qos_debug_fops = {
+	.open           = pm_qos_dbg_open,
+	.read           = seq_read,
+	.llseek         = seq_lseek,
+	.release        = single_release,
+};
+
 /**
  * pm_qos_update_target - manages the constraints list and calls the notifiers
  *  if needed
@@ -324,22 +275,9 @@ int pm_qos_update_target(struct pm_qos_constraints *c, struct plist_node *node,
 {
 	unsigned long flags;
 	int prev_value, curr_value, new_value;
-#ifdef CONFIG_ARCH_EXYNOS
-	struct pm_qos_constraints *cluster1_max_const;
-	struct pm_qos_constraints *cluster0_max_const;
-#endif
+	int ret;
 
 	spin_lock_irqsave(&pm_qos_lock, flags);
-
-#ifdef CONFIG_ARCH_EXYNOS
-	cluster1_max_const = cluster1_freq_max_pm_qos.constraints;
-	cluster0_max_const = cluster0_freq_max_pm_qos.constraints;
-
-	if ((c == cluster1_max_const || c == cluster0_max_const) &&
-				(value > c->default_value))
-		value = c->default_value;
-#endif
-
 	prev_value = pm_qos_get_value(c);
 	if (value == PM_QOS_DEFAULT_VALUE)
 		new_value = c->default_value;
@@ -371,66 +309,18 @@ int pm_qos_update_target(struct pm_qos_constraints *c, struct plist_node *node,
 
 	spin_unlock_irqrestore(&pm_qos_lock, flags);
 
-	if (c->type == PM_QOS_FORCE_MAX) {
-		blocking_notifier_call_chain(c->notifiers,
-					     (unsigned long)curr_value,
-					     NULL);
-		return 1;
-	}
-
+	trace_pm_qos_update_target(action, prev_value, curr_value);
 	if (prev_value != curr_value) {
-		blocking_notifier_call_chain(c->notifiers,
-					     (unsigned long)curr_value,
-					     NULL);
-		return 1;
+		ret = 1;
+		if (c->notifiers)
+			blocking_notifier_call_chain(c->notifiers,
+						     (unsigned long)curr_value,
+						     NULL);
 	} else {
-		return 0;
+		ret = 0;
 	}
-}
-
-/**
- * pm_qos_update_constraints - update new constraints attributes
- * @pm_qos_class: identification of which qos value is requested
- * @constraints: new constraints data struct
- *
- * This function updates new constraints attributes.
- */
-int pm_qos_update_constraints(int pm_qos_class,
-			struct pm_qos_constraints *constraints)
-{
-	struct pm_qos_constraints *r_constraints;
-	int ret = -EINVAL;
-	int i;
-
-	if (!constraints) {
-		printk(KERN_ERR "%s: invalid constraints\n",
-				__func__);
-		return ret;
-	}
-
-	for (i = 1; i < PM_QOS_NUM_CLASSES; i++) {
-		if (i != pm_qos_class)
-			continue;
-
-		r_constraints = pm_qos_array[i]->constraints;
-
-		if (constraints->target_value)
-			r_constraints->target_value = constraints->target_value;
-		if (constraints->default_value)
-			r_constraints->default_value = constraints->default_value;
-		if (constraints->type)
-			r_constraints->type = constraints->type;
-		if (constraints->notifiers)
-			r_constraints->notifiers = constraints->notifiers;
-
-		return 0;
-	}
-
-	printk(KERN_ERR "%s: no search PM QoS CLASS(%d)\n",
-				__func__, pm_qos_class);
 	return ret;
 }
-EXPORT_SYMBOL_GPL(pm_qos_update_constraints);
 
 /**
  * pm_qos_flags_remove_req - Remove device PM QoS flags request.
@@ -492,6 +382,7 @@ bool pm_qos_update_flags(struct pm_qos_flags *pqf,
 
 	spin_unlock_irqrestore(&pm_qos_lock, irqflags);
 
+	trace_pm_qos_update_flags(action, prev_value, curr_value);
 	return prev_value != curr_value;
 }
 
@@ -516,6 +407,8 @@ EXPORT_SYMBOL_GPL(pm_qos_request_active);
 static void __pm_qos_update_request(struct pm_qos_request *req,
 			   s32 new_value)
 {
+	trace_pm_qos_update_request(req->pm_qos_class, new_value);
+
 	if (new_value != req->node.prio)
 		pm_qos_update_target(
 			pm_qos_array[req->pm_qos_class]->constraints,
@@ -550,8 +443,7 @@ static void pm_qos_work_fn(struct work_struct *work)
  * removal.
  */
 
-void pm_qos_add_request_trace(char *func, unsigned int line,
-			struct pm_qos_request *req,
+void pm_qos_add_request(struct pm_qos_request *req,
 			int pm_qos_class, s32 value)
 {
 	if (!req) /*guard against callers passing in null */
@@ -562,13 +454,12 @@ void pm_qos_add_request_trace(char *func, unsigned int line,
 		return;
 	}
 	req->pm_qos_class = pm_qos_class;
-	req->func = func;
-	req->line = line;
 	INIT_DELAYED_WORK(&req->work, pm_qos_work_fn);
+	trace_pm_qos_add_request(pm_qos_class, value);
 	pm_qos_update_target(pm_qos_array[pm_qos_class]->constraints,
 			     &req->node, PM_QOS_ADD_REQ, value);
 }
-EXPORT_SYMBOL_GPL(pm_qos_add_request_trace);
+EXPORT_SYMBOL_GPL(pm_qos_add_request);
 
 /**
  * pm_qos_update_request - modifies an existing qos request
@@ -591,9 +482,7 @@ void pm_qos_update_request(struct pm_qos_request *req,
 		return;
 	}
 
-	if (delayed_work_pending(&req->work))
-		cancel_delayed_work_sync(&req->work);
-
+	cancel_delayed_work_sync(&req->work);
 	__pm_qos_update_request(req, new_value);
 }
 EXPORT_SYMBOL_GPL(pm_qos_update_request);
@@ -615,9 +504,10 @@ void pm_qos_update_request_timeout(struct pm_qos_request *req, s32 new_value,
 		 "%s called for unknown object.", __func__))
 		return;
 
-	if (delayed_work_pending(&req->work))
-		cancel_delayed_work_sync(&req->work);
+	cancel_delayed_work_sync(&req->work);
 
+	trace_pm_qos_update_request_timeout(req->pm_qos_class,
+					    new_value, timeout_us);
 	if (new_value != req->node.prio)
 		pm_qos_update_target(
 			pm_qos_array[req->pm_qos_class]->constraints,
@@ -645,9 +535,9 @@ void pm_qos_remove_request(struct pm_qos_request *req)
 		return;
 	}
 
-	if (delayed_work_pending(&req->work))
-		cancel_delayed_work_sync(&req->work);
+	cancel_delayed_work_sync(&req->work);
 
+	trace_pm_qos_remove_request(req->pm_qos_class, PM_QOS_DEFAULT_VALUE);
 	pm_qos_update_target(pm_qos_array[req->pm_qos_class]->constraints,
 			     &req->node, PM_QOS_REMOVE_REQ,
 			     PM_QOS_DEFAULT_VALUE);
@@ -696,11 +586,16 @@ int pm_qos_remove_notifier(int pm_qos_class, struct notifier_block *notifier)
 EXPORT_SYMBOL_GPL(pm_qos_remove_notifier);
 
 /* User space interface to PM QoS classes via misc devices */
-static int register_pm_qos_misc(struct pm_qos_object *qos)
+static int register_pm_qos_misc(struct pm_qos_object *qos, struct dentry *d)
 {
 	qos->pm_qos_power_miscdev.minor = MISC_DYNAMIC_MINOR;
 	qos->pm_qos_power_miscdev.name = qos->name;
 	qos->pm_qos_power_miscdev.fops = &pm_qos_power_fops;
+
+	if (d) {
+		(void)debugfs_create_file(qos->name, S_IRUGO, d,
+					  (void *)qos, &pm_qos_debug_fops);
+	}
 
 	return misc_register(&qos->pm_qos_power_miscdev);
 }
@@ -709,7 +604,7 @@ static int find_pm_qos_object_by_minor(int minor)
 {
 	int pm_qos_class;
 
-	for (pm_qos_class = 0;
+	for (pm_qos_class = PM_QOS_CPU_DMA_LATENCY;
 		pm_qos_class < PM_QOS_NUM_CLASSES; pm_qos_class++) {
 		if (minor ==
 			pm_qos_array[pm_qos_class]->pm_qos_power_miscdev.minor)
@@ -723,7 +618,7 @@ static int pm_qos_power_open(struct inode *inode, struct file *filp)
 	long pm_qos_class;
 
 	pm_qos_class = find_pm_qos_object_by_minor(iminor(inode));
-	if (pm_qos_class >= 0) {
+	if (pm_qos_class >= PM_QOS_CPU_DMA_LATENCY) {
 		struct pm_qos_request *req = kzalloc(sizeof(*req), GFP_KERNEL);
 		if (!req)
 			return -ENOMEM;
@@ -776,30 +671,12 @@ static ssize_t pm_qos_power_write(struct file *filp, const char __user *buf,
 	if (count == sizeof(s32)) {
 		if (copy_from_user(&value, buf, sizeof(s32)))
 			return -EFAULT;
-	} else if (count <= 11) { /* ASCII perhaps? */
-		char ascii_value[11];
-		unsigned long int ulval;
+	} else {
 		int ret;
 
-		if (copy_from_user(ascii_value, buf, count))
-			return -EFAULT;
-
-		if (count > 10) {
-			if (ascii_value[10] == '\n')
-				ascii_value[10] = '\0';
-			else
-				return -EINVAL;
-		} else {
-			ascii_value[count] = '\0';
-		}
-		ret = kstrtoul(ascii_value, 16, &ulval);
-		if (ret) {
-			pr_debug("%s, 0x%lx, 0x%x\n", ascii_value, ulval, ret);
-			return -EINVAL;
-		}
-		value = (s32)lower_32_bits(ulval);
-	} else {
-		return -EINVAL;
+		ret = kstrtos32_from_user(buf, count, 16, &value);
+		if (ret)
+			return ret;
 	}
 
 	req = filp->private_data;
@@ -808,66 +685,27 @@ static ssize_t pm_qos_power_write(struct file *filp, const char __user *buf,
 	return count;
 }
 
-static void pm_qos_debug_show_one(struct seq_file *s, struct pm_qos_object *qos)
-{
-	struct plist_node *p;
-	unsigned long flags;
-
-	spin_lock_irqsave(&pm_qos_lock, flags);
-
-	seq_printf(s, "%s\n", qos->name);
-	seq_printf(s, "   default value: %d\n", qos->constraints->default_value);
-	seq_printf(s, "   target value: %d\n", qos->constraints->target_value);
-	seq_printf(s, "   requests:\n");
-	plist_for_each(p, &qos->constraints->list)
-		seq_printf(s, "      %pk(%s:%d): %d\n",
-				container_of(p, struct pm_qos_request, node),
-				(container_of(p, struct pm_qos_request, node))->func,
-				(container_of(p, struct pm_qos_request, node))->line,
-				p->prio);
-
-	spin_unlock_irqrestore(&pm_qos_lock, flags);
-}
-
-static int pm_qos_debug_show(struct seq_file *s, void *d)
-{
-	int i;
-
-	for (i = 1; i < PM_QOS_NUM_CLASSES; i++)
-		pm_qos_debug_show_one(s, pm_qos_array[i]);
-
-	return 0;
-}
-
-static int pm_qos_debug_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, pm_qos_debug_show, inode->i_private);
-}
-
-const static struct file_operations pm_qos_debug_fops = {
-	.open		= pm_qos_debug_open,
-	.read		= seq_read,
-	.llseek		= seq_lseek,
-	.release	= single_release,
-};
 
 static int __init pm_qos_power_init(void)
 {
 	int ret = 0;
 	int i;
+	struct dentry *d;
 
 	BUILD_BUG_ON(ARRAY_SIZE(pm_qos_array) != PM_QOS_NUM_CLASSES);
 
-	for (i = 1; i < PM_QOS_NUM_CLASSES; i++) {
-		ret = register_pm_qos_misc(pm_qos_array[i]);
+	d = debugfs_create_dir("pm_qos", NULL);
+	if (IS_ERR_OR_NULL(d))
+		d = NULL;
+
+	for (i = PM_QOS_CPU_DMA_LATENCY; i < PM_QOS_NUM_CLASSES; i++) {
+		ret = register_pm_qos_misc(pm_qos_array[i], d);
 		if (ret < 0) {
 			printk(KERN_ERR "pm_qos_param: %s setup failed\n",
 			       pm_qos_array[i]->name);
 			return ret;
 		}
 	}
-
-	debugfs_create_file("pm_qos", S_IRUGO, NULL, NULL, &pm_qos_debug_fops);
 
 	return ret;
 }

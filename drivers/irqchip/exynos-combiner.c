@@ -15,14 +15,9 @@
 #include <linux/slab.h>
 #include <linux/irqdomain.h>
 #include <linux/irqchip/chained_irq.h>
+#include <linux/interrupt.h>
 #include <linux/of_address.h>
 #include <linux/of_irq.h>
-#include <asm/mach/irq.h>
-#include <linux/syscore_ops.h>
-
-#ifdef CONFIG_EXYNOS_ATAGS
-#include <plat/cpu.h>
-#endif
 
 #include "irqchip.h"
 
@@ -34,15 +29,11 @@
 
 static DEFINE_SPINLOCK(irq_controller_lock);
 
-static LIST_HEAD(combiner_list);
-
 struct combiner_chip_data {
-	struct list_head list;
 	unsigned int hwirq_offset;
 	unsigned int irq_mask;
 	void __iomem *base;
 	unsigned int parent_irq;
-	u32 combiner_save_mask;
 };
 
 static struct irq_domain *combiner_irq_domain;
@@ -90,7 +81,7 @@ static void combiner_handle_cascade_irq(unsigned int irq, struct irq_desc *desc)
 	cascade_irq = irq_find_mapping(combiner_irq_domain, combiner_irq);
 
 	if (unlikely(!cascade_irq))
-		do_bad_IRQ(irq, desc);
+		handle_bad_irq(irq, desc);
 	else
 		generic_handle_irq(cascade_irq);
 
@@ -138,13 +129,11 @@ static void __init combiner_init_one(struct combiner_chip_data *combiner_data,
 	combiner_data->hwirq_offset = (combiner_nr & ~3) * IRQ_IN_COMBINER;
 	combiner_data->irq_mask = 0xff << ((combiner_nr % 4) << 3);
 	combiner_data->parent_irq = irq;
-	list_add_tail(&combiner_data->list, &combiner_list);
 
 	/* Disable all interrupts */
 	__raw_writel(combiner_data->irq_mask, base + COMBINER_ENABLE_CLEAR);
 }
 
-#ifdef CONFIG_OF
 static int combiner_irq_domain_xlate(struct irq_domain *d,
 				     struct device_node *controller,
 				     const u32 *intspec, unsigned int intsize,
@@ -162,16 +151,6 @@ static int combiner_irq_domain_xlate(struct irq_domain *d,
 
 	return 0;
 }
-#else
-static int combiner_irq_domain_xlate(struct irq_domain *d,
-				     struct device_node *controller,
-				     const u32 *intspec, unsigned int intsize,
-				     unsigned long *out_hwirq,
-				     unsigned int *out_type)
-{
-	return -EINVAL;
-}
-#endif
 
 static int combiner_irq_domain_map(struct irq_domain *d, unsigned int irq,
 				   irq_hw_number_t hw)
@@ -190,30 +169,9 @@ static struct irq_domain_ops combiner_irq_domain_ops = {
 	.map	= combiner_irq_domain_map,
 };
 
-static unsigned int combiner_lookup_irq(int group)
-{
-#ifdef CONFIG_EXYNOS_ATAGS
-	if (group < EXYNOS4210_MAX_COMBINER_NR || soc_is_exynos5250())
-		return IRQ_SPI(group);
-
-	switch (group) {
-	case 16:
-		return IRQ_SPI(107);
-	case 17:
-		return IRQ_SPI(108);
-	case 18:
-		return IRQ_SPI(48);
-	case 19:
-		return IRQ_SPI(42);
-	}
-#endif
-	return 0;
-}
-
-void __init combiner_init(void __iomem *combiner_base,
-			  struct device_node *np,
-			  unsigned int max_nr,
-			  int irq_base)
+static void __init combiner_init(void __iomem *combiner_base,
+				 struct device_node *np,
+				 unsigned int max_nr)
 {
 	int i, irq;
 	unsigned int nr_irq;
@@ -227,7 +185,7 @@ void __init combiner_init(void __iomem *combiner_base,
 		return;
 	}
 
-	combiner_irq_domain = irq_domain_add_simple(np, nr_irq, irq_base,
+	combiner_irq_domain = irq_domain_add_linear(np, nr_irq,
 				&combiner_irq_domain_ops, combiner_data);
 	if (WARN_ON(!combiner_irq_domain)) {
 		pr_warning("%s: irq domain init failed\n", __func__);
@@ -235,12 +193,7 @@ void __init combiner_init(void __iomem *combiner_base,
 	}
 
 	for (i = 0; i < max_nr; i++) {
-#ifdef CONFIG_OF
-		if (np)
-			irq = irq_of_parse_and_map(np, i);
-		else
-#endif
-			irq = combiner_lookup_irq(i);
+		irq = irq_of_parse_and_map(np, i);
 
 		combiner_init_one(&combiner_data[i], i,
 				  combiner_base + (i >> 2) * 0x10, irq);
@@ -248,53 +201,11 @@ void __init combiner_init(void __iomem *combiner_base,
 	}
 }
 
-#ifdef CONFIG_PM
-static int combiner_suspend(void)
-{
-	struct combiner_chip_data *cd;
-
-	list_for_each_entry(cd, &combiner_list, list) {
-		cd->combiner_save_mask = __raw_readl(cd->base
-						+ COMBINER_ENABLE_SET);
-	}
-	return 0;
-}
-
-static void combiner_resume(void)
-{
-	struct combiner_chip_data *cd;
-
-	list_for_each_entry(cd, &combiner_list, list) {
-		u32 mask = cd->combiner_save_mask;
-			__raw_writel(~mask, cd->base + COMBINER_ENABLE_CLEAR);
-			__raw_writel(mask, cd->base + COMBINER_ENABLE_SET);
-	}
-}
-#else
-#define irq_gc_suspend NULL
-#define irq_gc_resume NULL
-static int combiner_suspend(void)
-{
-	return 0;
-}
-static void combiner_resume(void)
-{
-}
-#endif
-
-static struct syscore_ops combiner_syscore_ops = {
-	.suspend = combiner_suspend,
-	.resume = combiner_resume,
-};
-
-#ifdef CONFIG_OF
 static int __init combiner_of_init(struct device_node *np,
 				   struct device_node *parent)
 {
 	void __iomem *combiner_base;
 	unsigned int max_nr = 20;
-	unsigned int irq_base = 0;
-	int ret = 0;
 
 	combiner_base = of_iomap(np, 0);
 	if (!combiner_base) {
@@ -308,25 +219,9 @@ static int __init combiner_of_init(struct device_node *np,
 			__func__, max_nr);
 	}
 
-	/*
-	 * FIXME: This is a hardwired COMBINER_IRQ(0,0). Once all devices
-	 * get their IRQ from DT, remove this in order to get dynamic
-	 * allocation.
-	 */
-	ret = of_property_read_u32(np, "samsung,combiner-irqbase", &irq_base);
-	if (ret) {
-		irq_base = 160;
-		pr_info("%s: irq base not specified, "
-			"setting default as %d.\n",
-			__func__, irq_base);
-	}
-
-	combiner_init(combiner_base, np, max_nr, irq_base);
-
-	register_syscore_ops(&combiner_syscore_ops);
+	combiner_init(combiner_base, np, max_nr);
 
 	return 0;
 }
 IRQCHIP_DECLARE(exynos4210_combiner, "samsung,exynos4210-combiner",
 		combiner_of_init);
-#endif

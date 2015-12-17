@@ -34,15 +34,13 @@
 #include <linux/irq.h>
 #include <linux/delay.h>
 #include <linux/clocksource.h>
+#include <linux/clk-provider.h>
+#include <linux/acpi.h>
 
 #include <clocksource/arm_arch_timer.h>
-#include <clocksource/exynos_mct.h>
 
 #include <asm/thread_info.h>
 #include <asm/stacktrace.h>
-#include <asm/mach/arch.h>
-#include <asm/mach/time.h>
-#include <linux/clk-provider.h>
 
 #ifdef CONFIG_SMP
 unsigned long profile_pc(struct pt_regs *regs)
@@ -66,57 +64,6 @@ unsigned long profile_pc(struct pt_regs *regs)
 EXPORT_SYMBOL(profile_pc);
 #endif
 
-#ifndef CONFIG_CLKSRC_EXYNOS_MCT
-static u64 sched_clock_mult __read_mostly;
-
-unsigned long long notrace sched_clock(void)
-{
-	return arch_timer_read_counter() * sched_clock_mult;
-}
-#endif
-
-int read_current_timer(unsigned long *timer_value)
-{
-	*timer_value = arch_timer_read_counter();
-	return 0;
-}
-
-static void dummy_clock_access(struct timespec *ts)
-{
-	ts->tv_sec = 0;
-	ts->tv_nsec = 0;
-}
-
-static clock_access_fn __read_persistent_clock = dummy_clock_access;
-static clock_access_fn __read_boot_clock = dummy_clock_access;;
-
-void read_persistent_clock(struct timespec *ts)
-{
-	__read_persistent_clock(ts);
-}
-
-void read_boot_clock(struct timespec *ts)
-{
-	__read_boot_clock(ts);
-}
-
-int __init register_persistent_clock(clock_access_fn read_boot,
-				     clock_access_fn read_persistent)
-{
-	/* Only allow the clockaccess functions to be registered once */
-	if (__read_persistent_clock == dummy_clock_access &&
-	    __read_boot_clock == dummy_clock_access) {
-		if (read_boot)
-			__read_boot_clock = read_boot;
-		if (read_persistent)
-			__read_persistent_clock = read_persistent;
-
-		return 0;
-	}
-
-	return -EINVAL;
-}
-
 void __init time_init(void)
 {
 	u32 arch_timer_rate;
@@ -125,6 +72,12 @@ void __init time_init(void)
 	clocksource_of_init();
 
 	tick_setup_hrtimer_broadcast();
+
+	/*
+	 * Since ACPI or FDT will only one be available in the system,
+	 * we can use acpi_generic_timer_init() here safely
+	 */
+	acpi_generic_timer_init();
 
 	arch_timer_rate = arch_timer_get_rate();
 	if (!arch_timer_rate)

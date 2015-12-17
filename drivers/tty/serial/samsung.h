@@ -1,3 +1,6 @@
+#ifndef __SAMSUNG_H
+#define __SAMSUNG_H
+
 /*
  * Driver for Samsung SoC onboard UARTs.
  *
@@ -9,14 +12,7 @@
  * published by the Free Software Foundation.
 */
 
-#include <linux/pm_qos.h>
-
-#define S3C24XX_UART_PORT_RESUME		0x0
-#define S3C24XX_UART_PORT_SUSPEND		0x3
-#define S3C24XX_UART_PORT_LPM			0x5
-
-#define S3C24XX_SERIAL_CTRL_NUM			0x4
-#define S3C24XX_SERIAL_BUAD_NUM			0x2
+#include <linux/dmaengine.h>
 
 struct s3c24xx_uart_info {
 	char			*name;
@@ -41,100 +37,84 @@ struct s3c24xx_uart_info {
 	int (*reset_port)(struct uart_port *, struct s3c2410_uartcfg *);
 };
 
-#ifdef CONFIG_SERIAL_SAMSUNG_DMA
-struct uart_dma_data {
-	unsigned ch;
-	unsigned int busy;
-	unsigned int req_size;
-	unsigned long fifo_base;
-	enum dma_ch req_ch;
-	enum dma_transfer_direction direction;
-};
-
-struct exynos_uart_dma {
-	unsigned int use_dma;
-
-	dma_addr_t tx_src_addr;
-	dma_addr_t rx_dst_addr;
-
-	struct uart_dma_data tx;
-	struct uart_dma_data rx;
-
-	struct samsung_dma_ops *ops;
-	struct platform_device *pdev;
-
-	char *rx_buff;
-};
-#endif
-
 struct s3c24xx_serial_drv_data {
 	struct s3c24xx_uart_info	*info;
 	struct s3c2410_uartcfg		*def_cfg;
 	unsigned int			fifosize[CONFIG_SERIAL_SAMSUNG_UARTS];
 };
 
+struct s3c24xx_uart_dma {
+	dma_filter_fn			fn;
+	void				*rx_param;
+	void				*tx_param;
 
-struct local_buf {
-	char *buffer;
-	int size;
-	int index;
+	unsigned int			rx_chan_id;
+	unsigned int			tx_chan_id;
+
+	struct dma_slave_config		rx_conf;
+	struct dma_slave_config		tx_conf;
+
+	struct dma_chan			*rx_chan;
+	struct dma_chan			*tx_chan;
+
+	dma_addr_t			rx_addr;
+	dma_addr_t			tx_addr;
+
+	dma_cookie_t			rx_cookie;
+	dma_cookie_t			tx_cookie;
+
+	char				*rx_buf;
+
+	dma_addr_t			tx_transfer_addr;
+
+	size_t				rx_size;
+	size_t				tx_size;
+
+	struct dma_async_tx_descriptor	*tx_desc;
+	struct dma_async_tx_descriptor	*rx_desc;
+
+	int				tx_bytes_requested;
+	int				rx_bytes_requested;
 };
 
 struct s3c24xx_uart_port {
-	struct list_head		node;
 	unsigned char			rx_claimed;
 	unsigned char			tx_claimed;
+	unsigned int			pm_level;
 	unsigned long			baudclk_rate;
 
 	unsigned int			rx_irq;
 	unsigned int			tx_irq;
 
-#ifdef CONFIG_SERIAL_SAMSUNG_DMA
-	unsigned int                    err_irq;
-	unsigned int                    err_occurred;
-#endif
-	int				check_separated_clk;
+	unsigned int			tx_in_progress;
+	unsigned int			tx_mode;
+	unsigned int			rx_mode;
+
 	struct s3c24xx_uart_info	*info;
 	struct clk			*clk;
-	struct clk			*separated_clk;
 	struct clk			*baudclk;
-	unsigned long			sclk_clk_rate;
 	struct uart_port		port;
-#ifdef CONFIG_SERIAL_SAMSUNG_DMA
-	struct exynos_uart_dma          uart_dma;
-#endif
 	struct s3c24xx_serial_drv_data	*drv_data;
-
-	u32				uart_irq_affinity;
-	s32				mif_qos_val;
-	s32				cpu_qos_val;
-	u32				use_default_irq;
-	unsigned long			qos_timeout;
-
-#define DOMAIN_TOP	0
-#define DOMAIN_AUD	1
-	u32				domain;
 
 	/* reference to platform data */
 	struct s3c2410_uartcfg		*cfg;
 
-	struct platform_device		*pdev;
+	struct s3c24xx_uart_dma		*dma;
 
-	struct pm_qos_request		s3c24xx_uart_mif_qos;
-	struct pm_qos_request		s3c24xx_uart_cpu_qos;
-	struct delayed_work		qos_work;
-
-	struct local_buf local_buf;
+#ifdef CONFIG_CPU_FREQ
+	struct notifier_block		freq_transition;
+#endif
 };
 
 /* conversion functions */
 
-#define s3c24xx_dev_to_port(__dev) (struct uart_port *)dev_get_drvdata(__dev)
+#define s3c24xx_dev_to_port(__dev) dev_get_drvdata(__dev)
 
 /* register access controls */
 
 #define portaddr(port, reg) ((port)->membase + (reg))
-#define portaddrl(port, reg) ((unsigned long *)((port)->membase + (reg)))
+#define portaddrl(port, reg) \
+	((unsigned long *)(unsigned long)((port)->membase + (reg)))
 
 #define rd_regb(port, reg) (__raw_readb(portaddr(port, reg)))
 #define rd_regl(port, reg) (__raw_readl(portaddr(port, reg)))
@@ -142,24 +122,4 @@ struct s3c24xx_uart_port {
 #define wr_regb(port, reg, val) __raw_writeb(val, portaddr(port, reg))
 #define wr_regl(port, reg, val) __raw_writel(val, portaddr(port, reg))
 
-#if defined(CONFIG_SERIAL_SAMSUNG_DEBUG) && \
-    defined(CONFIG_DEBUG_LL) && \
-    !defined(MODULE)
-
-extern void printascii(const char *);
-
-static void dbg(const char *fmt, ...)
-{
-	va_list va;
-	char buff[256];
-
-	va_start(va, fmt);
-	vsprintf(buff, fmt, va);
-	va_end(va);
-
-	printascii(buff);
-}
-
-#else
-#define dbg(x...) do { } while (0)
 #endif

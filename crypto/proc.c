@@ -26,7 +26,8 @@
 #ifdef CONFIG_CRYPTO_FIPS
 static struct ctl_table crypto_sysctl_table[] = {
 	{
-		.procname       = "fips_status",
+		.procname       = "fips_enabled",
+		.data           = &fips_enabled,
 		.maxlen         = sizeof(int),
 		.mode           = 0444,
 		.proc_handler   = proc_dointvec
@@ -88,6 +89,9 @@ static int c_show(struct seq_file *m, void *p)
 	seq_printf(m, "selftest     : %s\n",
 		   (alg->cra_flags & CRYPTO_ALG_TESTED) ?
 		   "passed" : "unknown");
+	seq_printf(m, "internal     : %s\n",
+		   (alg->cra_flags & CRYPTO_ALG_INTERNAL) ?
+		   "yes" : "no");
 
 	if (alg->cra_flags & CRYPTO_ALG_LARVAL) {
 		seq_printf(m, "type         : larval\n");
@@ -141,20 +145,11 @@ static const struct file_operations proc_crypto_ops = {
 	.release	= seq_release
 };
 
-#ifdef CONFIG_CRYPTO_FIPS
-void crypto_init_proc(int *fips_error)
-{
-	proc_create("crypto", 0, NULL, &proc_crypto_ops);
-	crypto_sysctl_table[0].data = fips_error;
-	crypto_proc_fips_init();
-}
-#else
 void __init crypto_init_proc(void)
 {
 	proc_create("crypto", 0, NULL, &proc_crypto_ops);
 	crypto_proc_fips_init();
 }
-#endif
 
 void __exit crypto_exit_proc(void)
 {

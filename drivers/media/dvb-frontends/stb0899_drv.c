@@ -20,6 +20,7 @@
 */
 
 #include <linux/init.h>
+#include <linux/jiffies.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/slab.h>
@@ -691,7 +692,7 @@ static int stb0899_wait_diseqc_fifo_empty(struct stb0899_state *state, int timeo
 		reg = stb0899_read_reg(state, STB0899_DISSTATUS);
 		if (!STB0899_GETFIELD(FIFOFULL, reg))
 			break;
-		if ((jiffies - start) > timeout) {
+		if (time_after(jiffies, start + timeout)) {
 			dprintk(state->verbose, FE_ERROR, 1, "timed out !!");
 			return -ETIMEDOUT;
 		}
@@ -705,7 +706,7 @@ static int stb0899_send_diseqc_msg(struct dvb_frontend *fe, struct dvb_diseqc_ma
 	struct stb0899_state *state = fe->demodulator_priv;
 	u8 reg, i;
 
-	if (cmd->msg_len > 8)
+	if (cmd->msg_len > sizeof(cmd->msg))
 		return -EINVAL;
 
 	/* enable FIFO precharge	*/
@@ -733,7 +734,7 @@ static int stb0899_wait_diseqc_rxidle(struct stb0899_state *state, int timeout)
 
 	while (!STB0899_GETFIELD(RXEND, reg)) {
 		reg = stb0899_read_reg(state, STB0899_DISRX_ST0);
-		if (jiffies - start > timeout) {
+		if (time_after(jiffies, start + timeout)) {
 			dprintk(state->verbose, FE_ERROR, 1, "timed out!!");
 			return -ETIMEDOUT;
 		}
@@ -782,7 +783,7 @@ static int stb0899_wait_diseqc_txidle(struct stb0899_state *state, int timeout)
 
 	while (!STB0899_GETFIELD(TXIDLE, reg)) {
 		reg = stb0899_read_reg(state, STB0899_DISSTATUS);
-		if (jiffies - start > timeout) {
+		if (time_after(jiffies, start + timeout)) {
 			dprintk(state->verbose, FE_ERROR, 1, "timed out!!");
 			return -ETIMEDOUT;
 		}
@@ -1628,19 +1629,18 @@ static struct dvb_frontend_ops stb0899_ops = {
 struct dvb_frontend *stb0899_attach(struct stb0899_config *config, struct i2c_adapter *i2c)
 {
 	struct stb0899_state *state = NULL;
-	enum stb0899_inversion inversion;
 
 	state = kzalloc(sizeof (struct stb0899_state), GFP_KERNEL);
 	if (state == NULL)
 		goto error;
 
-	inversion				= config->inversion;
 	state->verbose				= &verbose;
 	state->config				= config;
 	state->i2c				= i2c;
 	state->frontend.ops			= stb0899_ops;
 	state->frontend.demodulator_priv	= state;
-	state->internal.inversion		= inversion;
+	/* use configured inversion as default -- we'll later autodetect inversion */
+	state->internal.inversion		= config->inversion;
 
 	stb0899_wakeup(&state->frontend);
 	if (stb0899_get_dev_id(state) == -ENODEV) {

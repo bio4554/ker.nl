@@ -17,9 +17,12 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <linux/errno.h>
 #include <linux/linkage.h>
 #include <linux/init.h>
 #include <asm/assembler.h>
+#include <asm/cpufeature.h>
+#include <asm/alternative-asm.h>
 
 #include "proc-macros.S"
 
@@ -96,26 +99,6 @@ ENTRY(flush_cache_all)
 	ret	x12
 ENDPROC(flush_cache_all)
 
-ENTRY(__flush_dcache_louis)
-	dmb	ish
-	mrs	x0, clidr_el1
-	ands	x3, x0, #(7 << 21)
-	lsr	x3, x3, #20			// w3 = LoUIS * 2
-	b.eq	level_is_zero
-	mov	x10, #0
-	b	loop1				// start flushing cache
-level_is_zero:
-	ret
-ENDPROC(__flush_dcache_louis)
-
-ENTRY(flush_cache_louis)
-	mov	x12, lr
-	bl	__flush_dcache_louis
-	mov	x0, #0
-	ic	ialluis
-	ret	x12
-ENDPROC(flush_cache_louis)
-
 /*
  *	flush_icache_range(start,end)
  *
@@ -158,9 +141,12 @@ USER(9f, ic	ivau, x4	)		// invalidate I line PoU
 	add	x4, x4, x2
 	cmp	x4, x1
 	b.lo	1b
-9:						// ignore any faulting cache operation
 	dsb	ish
 	isb
+	mov	x0, #0
+	ret
+9:
+	mov	x0, #-EFAULT
 	ret
 ENDPROC(flush_icache_range)
 ENDPROC(__flush_cache_user_range)
@@ -188,6 +174,14 @@ ENTRY(__flush_dcache_area)
 ENDPROC(__flush_dcache_area)
 
 /*
+ *	__inval_cache_range(start, end)
+ *	- start   - start address of region
+ *	- end     - end address of region
+ */
+ENTRY(__inval_cache_range)
+	/* FALLTHROUGH */
+
+/*
  *	__dma_inv_range(start, end)
  *	- start   - virtual start address of region
  *	- end     - virtual end address of region
@@ -210,6 +204,7 @@ __dma_inv_range:
 	b.lo	2b
 	dsb	sy
 	ret
+ENDPROC(__inval_cache_range)
 ENDPROC(__dma_inv_range)
 
 /*
@@ -221,7 +216,7 @@ __dma_clean_range:
 	dcache_line_size x2, x3
 	sub	x3, x2, #1
 	bic	x0, x0, x3
-1:	dc	cvac, x0			// clean D / U line
+1:	alternative_insn "dc cvac, x0", "dc civac, x0", ARM64_WORKAROUND_CLEAN_CACHE
 	add	x0, x0, x2
 	cmp	x0, x1
 	b.lo	1b

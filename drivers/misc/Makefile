@@ -7,7 +7,6 @@ obj-$(CONFIG_AD525X_DPOT)	+= ad525x_dpot.o
 obj-$(CONFIG_AD525X_DPOT_I2C)	+= ad525x_dpot-i2c.o
 obj-$(CONFIG_AD525X_DPOT_SPI)	+= ad525x_dpot-spi.o
 obj-$(CONFIG_INTEL_MID_PTI)	+= pti.o
-obj-$(CONFIG_ATMEL_PWM)		+= atmel_pwm.o
 obj-$(CONFIG_ATMEL_SSC)		+= atmel-ssc.o
 obj-$(CONFIG_ATMEL_TCLIB)	+= atmel_tclib.o
 obj-$(CONFIG_BMP085)		+= bmp085.o
@@ -33,7 +32,6 @@ obj-$(CONFIG_APDS9802ALS)	+= apds9802als.o
 obj-$(CONFIG_ISL29003)		+= isl29003.o
 obj-$(CONFIG_ISL29020)		+= isl29020.o
 obj-$(CONFIG_SENSORS_TSL2550)	+= tsl2550.o
-obj-$(CONFIG_EP93XX_PWM)	+= ep93xx_pwm.o
 obj-$(CONFIG_DS1682)		+= ds1682.o
 obj-$(CONFIG_TI_DAC7512)	+= ti_dac7512.o
 obj-$(CONFIG_UID_STAT)		+= uid_stat.o
@@ -54,33 +52,9 @@ obj-$(CONFIG_INTEL_MEI)		+= mei/
 obj-$(CONFIG_VMWARE_VMCI)	+= vmw_vmci/
 obj-$(CONFIG_LATTICE_ECP3_CONFIG)	+= lattice-ecp3-config.o
 obj-$(CONFIG_SRAM)		+= sram.o
+obj-y				+= mic/
+obj-$(CONFIG_GENWQE)		+= genwqe/
+obj-$(CONFIG_ECHO)		+= echo/
+obj-$(CONFIG_VEXPRESS_SYSCFG)	+= vexpress-syscfg.o
+obj-$(CONFIG_CXL_BASE)		+= cxl/
 obj-$(CONFIG_UID_CPUTIME) += uid_cputime.o
-obj-$(CONFIG_SCHED_HMP)		+= cci400.o
-obj-$(CONFIG_MIPI_LLI)		+= mipi-lli/
-obj-$(CONFIG_SEC_MODEM_V1)	+= modem_v1/
-# HMP
-obj-$(CONFIG_SCHED_HMP)		+= exynos_core_sysfs.o
-obj-$(CONFIG_EXYNOS_OTP)	+= exynos_otp.o
-obj-$(CONFIG_MCU_IPC)      += mcu_ipc/
-# FM Radio
-obj-$(CONFIG_FM_RADIO)		+= samsung/
-
-# Secure OS Mobicore Interface
-obj-$(CONFIG_MOBICORE_DRIVER)  += tzic64.o
-
-ifeq ($(TIMA_ENABLED),1)
-obj-$(CONFIG_TIMA_LOG)		+= tima_debug_log.o
-endif
-
-# SS/DS
-obj-$(CONFIG_CHECK_SIMSLOT_COUNT) += sim_slot.o
-
-# GPIO_DETECT
-obj-$(CONFIG_CHECK_GPIO_DETECT) += gpio_detect.o
-
-# for DMVerity
-obj-$(CONFIG_DM_VERITY)		+= dmverity_query.o
-
-# IrDA FPGA
-obj-$(CONFIG_SEC_FPGA_ICE40XX)  += ice40xx.o
-

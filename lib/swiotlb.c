@@ -38,6 +38,9 @@
 #include <linux/bootmem.h>
 #include <linux/iommu-helper.h>
 
+#define CREATE_TRACE_POINTS
+#include <trace/events/swiotlb.h>
+
 #define OFFSET(val,align) ((unsigned long)	\
 	                   ( (val) & ( (align) - 1)))
 
@@ -83,12 +86,8 @@ static unsigned int io_tlb_index;
  * We need to save away the original address corresponding to a mapped entry
  * for the sync operations.
  */
+#define INVALID_PHYS_ADDR (~(phys_addr_t)0)
 static phys_addr_t *io_tlb_orig_addr;
-
-#ifdef CONFIG_SEC_DEBUG_MDM_SWIOTLB
-static phys_addr_t *io_tlb_debug;
-#endif
-
 
 /*
  * Protect the above data structures in the map and unmap calls
@@ -174,8 +173,9 @@ int __init swiotlb_init_with_tbl(char *tlb, unsigned long nslabs, int verbose)
 	/*
 	 * Get the overflow emergency buffer
 	 */
-	v_overflow_buffer = alloc_bootmem_low_pages_nopanic(
-						PAGE_ALIGN(io_tlb_overflow));
+	v_overflow_buffer = memblock_virt_alloc_low_nopanic(
+						PAGE_ALIGN(io_tlb_overflow),
+						PAGE_SIZE);
 	if (!v_overflow_buffer)
 		return -ENOMEM;
 
@@ -186,14 +186,17 @@ int __init swiotlb_init_with_tbl(char *tlb, unsigned long nslabs, int verbose)
 	 * to find contiguous free memory regions of size up to IO_TLB_SEGSIZE
 	 * between io_tlb_start and io_tlb_end.
 	 */
-	io_tlb_list = alloc_bootmem_pages(PAGE_ALIGN(io_tlb_nslabs * sizeof(int)));
-	for (i = 0; i < io_tlb_nslabs; i++)
+	io_tlb_list = memblock_virt_alloc(
+				PAGE_ALIGN(io_tlb_nslabs * sizeof(int)),
+				PAGE_SIZE);
+	io_tlb_orig_addr = memblock_virt_alloc(
+				PAGE_ALIGN(io_tlb_nslabs * sizeof(phys_addr_t)),
+				PAGE_SIZE);
+	for (i = 0; i < io_tlb_nslabs; i++) {
 		io_tlb_list[i] = IO_TLB_SEGSIZE - OFFSET(i, IO_TLB_SEGSIZE);
+		io_tlb_orig_addr[i] = INVALID_PHYS_ADDR;
+	}
 	io_tlb_index = 0;
-	io_tlb_orig_addr = alloc_bootmem_pages(PAGE_ALIGN(io_tlb_nslabs * sizeof(phys_addr_t)));
-#ifdef CONFIG_SEC_DEBUG_MDM_SWIOTLB
-	io_tlb_debug = alloc_bootmem_pages(PAGE_ALIGN(io_tlb_nslabs * sizeof(phys_addr_t)));
-#endif
 
 	if (verbose)
 		swiotlb_print_info();
@@ -220,13 +223,13 @@ swiotlb_init(int verbose)
 	bytes = io_tlb_nslabs << IO_TLB_SHIFT;
 
 	/* Get IO TLB memory from the low pages */
-	vstart = alloc_bootmem_low_pages_nopanic(PAGE_ALIGN(bytes));
+	vstart = memblock_virt_alloc_low_nopanic(PAGE_ALIGN(bytes), PAGE_SIZE);
 	if (vstart && !swiotlb_init_with_tbl(vstart, io_tlb_nslabs, verbose))
 		return;
 
 	if (io_tlb_start)
-		free_bootmem(io_tlb_start,
-				 PAGE_ALIGN(io_tlb_nslabs << IO_TLB_SHIFT));
+		memblock_free_early(io_tlb_start,
+				    PAGE_ALIGN(io_tlb_nslabs << IO_TLB_SHIFT));
 	pr_warn("Cannot allocate SWIOTLB buffer");
 	no_iotlb_memory = true;
 }
@@ -313,10 +316,6 @@ swiotlb_late_init_with_tbl(char *tlb, unsigned long nslabs)
 	if (!io_tlb_list)
 		goto cleanup3;
 
-	for (i = 0; i < io_tlb_nslabs; i++)
- 		io_tlb_list[i] = IO_TLB_SEGSIZE - OFFSET(i, IO_TLB_SEGSIZE);
-	io_tlb_index = 0;
-
 	io_tlb_orig_addr = (phys_addr_t *)
 		__get_free_pages(GFP_KERNEL,
 				 get_order(io_tlb_nslabs *
@@ -324,19 +323,11 @@ swiotlb_late_init_with_tbl(char *tlb, unsigned long nslabs)
 	if (!io_tlb_orig_addr)
 		goto cleanup4;
 
-	memset(io_tlb_orig_addr, 0, io_tlb_nslabs * sizeof(phys_addr_t));
-
-
-#ifdef CONFIG_SEC_DEBUG_MDM_SWIOTLB
-		io_tlb_debug = (phys_addr_t *)
-			__get_free_pages(GFP_KERNEL,
-					 get_order(io_tlb_nslabs *
-						   sizeof(phys_addr_t)));
-		if (!io_tlb_debug)
-			goto cleanup4;
-
-		memset(io_tlb_debug, 0, io_tlb_nslabs * sizeof(phys_addr_t));
-#endif
+	for (i = 0; i < io_tlb_nslabs; i++) {
+		io_tlb_list[i] = IO_TLB_SEGSIZE - OFFSET(i, IO_TLB_SEGSIZE);
+		io_tlb_orig_addr[i] = INVALID_PHYS_ADDR;
+	}
+	io_tlb_index = 0;
 
 	swiotlb_print_info();
 
@@ -367,10 +358,6 @@ void __init swiotlb_free(void)
 	if (late_alloc) {
 		free_pages((unsigned long)phys_to_virt(io_tlb_overflow_buffer),
 			   get_order(io_tlb_overflow));
-#ifdef CONFIG_SEC_DEBUG_MDM_SWIOTLB
-		free_pages((unsigned long)io_tlb_debug,
-			   get_order(io_tlb_nslabs * sizeof(phys_addr_t)));
-#endif
 		free_pages((unsigned long)io_tlb_orig_addr,
 			   get_order(io_tlb_nslabs * sizeof(phys_addr_t)));
 		free_pages((unsigned long)io_tlb_list, get_order(io_tlb_nslabs *
@@ -378,23 +365,19 @@ void __init swiotlb_free(void)
 		free_pages((unsigned long)phys_to_virt(io_tlb_start),
 			   get_order(io_tlb_nslabs << IO_TLB_SHIFT));
 	} else {
-		free_bootmem_late(io_tlb_overflow_buffer,
-				  PAGE_ALIGN(io_tlb_overflow));
-#ifdef CONFIG_SEC_DEBUG_MDM_SWIOTLB
-		free_bootmem_late(__pa(io_tlb_debug),
-				  PAGE_ALIGN(io_tlb_nslabs * sizeof(phys_addr_t)));
-#endif
-		free_bootmem_late(__pa(io_tlb_orig_addr),
-				  PAGE_ALIGN(io_tlb_nslabs * sizeof(phys_addr_t)));
-		free_bootmem_late(__pa(io_tlb_list),
-				  PAGE_ALIGN(io_tlb_nslabs * sizeof(int)));
-		free_bootmem_late(io_tlb_start,
-				  PAGE_ALIGN(io_tlb_nslabs << IO_TLB_SHIFT));
+		memblock_free_late(io_tlb_overflow_buffer,
+				   PAGE_ALIGN(io_tlb_overflow));
+		memblock_free_late(__pa(io_tlb_orig_addr),
+				   PAGE_ALIGN(io_tlb_nslabs * sizeof(phys_addr_t)));
+		memblock_free_late(__pa(io_tlb_list),
+				   PAGE_ALIGN(io_tlb_nslabs * sizeof(int)));
+		memblock_free_late(io_tlb_start,
+				   PAGE_ALIGN(io_tlb_nslabs << IO_TLB_SHIFT));
 	}
 	io_tlb_nslabs = 0;
 }
 
-static int is_swiotlb_buffer(phys_addr_t paddr)
+int is_swiotlb_buffer(phys_addr_t paddr)
 {
 	return paddr >= io_tlb_start && paddr < io_tlb_end;
 }
@@ -507,15 +490,9 @@ phys_addr_t swiotlb_tbl_map_single(struct device *hwdev,
 		 */
 		if (io_tlb_list[index] >= nslots) {
 			int count = 0;
-#ifdef CONFIG_SEC_DEBUG_MDM_SWIOTLB
-			for (i = index; i < (int) (index + nslots); i++) {
-				io_tlb_list[i] = 0;
-				io_tlb_debug[i] = (phys_addr_t)hwdev;
-			}
-#else
+
 			for (i = index; i < (int) (index + nslots); i++)
 				io_tlb_list[i] = 0;
-#endif
 			for (i = index - 1; (OFFSET(i, IO_TLB_SEGSIZE) != IO_TLB_SEGSIZE - 1) && io_tlb_list[i]; i--)
 				io_tlb_list[i] = ++count;
 			tlb_addr = io_tlb_start + (index << IO_TLB_SHIFT);
@@ -536,6 +513,8 @@ phys_addr_t swiotlb_tbl_map_single(struct device *hwdev,
 
 not_found:
 	spin_unlock_irqrestore(&io_tlb_lock, flags);
+	if (printk_ratelimit())
+		dev_warn(hwdev, "swiotlb buffer is full (sz: %zd bytes)\n", size);
 	return SWIOTLB_MAP_ERROR;
 found:
 	spin_unlock_irqrestore(&io_tlb_lock, flags);
@@ -558,8 +537,9 @@ EXPORT_SYMBOL_GPL(swiotlb_tbl_map_single);
  * Allocates bounce buffer and returns its kernel virtual address.
  */
 
-phys_addr_t map_single(struct device *hwdev, phys_addr_t phys, size_t size,
-		       enum dma_data_direction dir)
+static phys_addr_t
+map_single(struct device *hwdev, phys_addr_t phys, size_t size,
+	   enum dma_data_direction dir)
 {
 	dma_addr_t start_dma_addr = phys_to_dma(hwdev, io_tlb_start);
 
@@ -580,7 +560,8 @@ void swiotlb_tbl_unmap_single(struct device *hwdev, phys_addr_t tlb_addr,
 	/*
 	 * First, sync the memory before unmapping the entry
 	 */
-	if (orig_addr && ((dir == DMA_FROM_DEVICE) || (dir == DMA_BIDIRECTIONAL)))
+	if (orig_addr != INVALID_PHYS_ADDR &&
+	    ((dir == DMA_FROM_DEVICE) || (dir == DMA_BIDIRECTIONAL)))
 		swiotlb_bounce(orig_addr, tlb_addr, size, DMA_FROM_DEVICE);
 
 	/*
@@ -597,15 +578,10 @@ void swiotlb_tbl_unmap_single(struct device *hwdev, phys_addr_t tlb_addr,
 		 * Step 1: return the slots to the free list, merging the
 		 * slots with superceeding slots
 		 */
-#ifdef CONFIG_SEC_DEBUG_MDM_SWIOTLB
 		for (i = index + nslots - 1; i >= index; i--) {
 			io_tlb_list[i] = ++count;
-			io_tlb_debug[i] = 0;
+			io_tlb_orig_addr[i] = INVALID_PHYS_ADDR;
 		}
-#else
-		for (i = index + nslots - 1; i >= index; i--)
-			io_tlb_list[i] = ++count;
-#endif
 		/*
 		 * Step 2: merge the returned slots with the preceding slots,
 		 * if available (non zero)
@@ -624,6 +600,8 @@ void swiotlb_tbl_sync_single(struct device *hwdev, phys_addr_t tlb_addr,
 	int index = (tlb_addr - io_tlb_start) >> IO_TLB_SHIFT;
 	phys_addr_t orig_addr = io_tlb_orig_addr[index];
 
+	if (orig_addr == INVALID_PHYS_ADDR)
+		return;
 	orig_addr += (unsigned long)tlb_addr & ((1 << IO_TLB_SHIFT) - 1);
 
 	switch (target) {
@@ -767,6 +745,8 @@ dma_addr_t swiotlb_map_page(struct device *dev, struct page *page,
 	if (dma_capable(dev, dev_addr, size) && !swiotlb_force)
 		return dev_addr;
 
+	trace_swiotlb_bounced(dev, dev_addr, size, swiotlb_force);
+
 	/* Oh well, have to allocate and map a bounce buffer. */
 	map = map_single(dev, phys, size, dir);
 	if (map == SWIOTLB_MAP_ERROR) {
@@ -909,20 +889,15 @@ swiotlb_map_sg_attrs(struct device *hwdev, struct scatterlist *sgl, int nelems,
 				/* Don't panic here, we expect map_sg users
 				   to do proper error handling. */
 				swiotlb_full(hwdev, sg->length, dir, 0);
-#ifdef CONFIG_SEC_DEBUG_MDM_SWIOTLB
-				pr_err("%s: dev=%s, addr=%pa, size=%u, dir=%d\n",
-						__func__, hwdev ? dev_name(hwdev) : "?",
-						&dev_addr, sg->length, dir);
-#endif
 				swiotlb_unmap_sg_attrs(hwdev, sgl, i, dir,
 						       attrs);
-				sgl[0].dma_length = 0;
+				sg_dma_len(sgl) = 0;
 				return 0;
 			}
 			sg->dma_address = phys_to_dma(hwdev, map);
 		} else
 			sg->dma_address = dev_addr;
-		sg->dma_length = sg->length;
+		sg_dma_len(sg) = sg->length;
 	}
 	return nelems;
 }
@@ -950,7 +925,7 @@ swiotlb_unmap_sg_attrs(struct device *hwdev, struct scatterlist *sgl,
 	BUG_ON(dir == DMA_NONE);
 
 	for_each_sg(sgl, sg, nelems, i)
-		unmap_single(hwdev, sg->dma_address, sg->dma_length, dir);
+		unmap_single(hwdev, sg->dma_address, sg_dma_len(sg), dir);
 
 }
 EXPORT_SYMBOL(swiotlb_unmap_sg_attrs);
@@ -980,7 +955,7 @@ swiotlb_sync_sg(struct device *hwdev, struct scatterlist *sgl,
 
 	for_each_sg(sgl, sg, nelems, i)
 		swiotlb_sync_single(hwdev, sg->dma_address,
-				    sg->dma_length, dir, target);
+				    sg_dma_len(sg), dir, target);
 }
 
 void
@@ -1018,97 +993,3 @@ swiotlb_dma_supported(struct device *hwdev, u64 mask)
 	return phys_to_dma(hwdev, io_tlb_end - 1) <= mask;
 }
 EXPORT_SYMBOL(swiotlb_dma_supported);
-
-
-
-#if defined(CONFIG_DEBUG_FS) && defined(CONFIG_SEC_DEBUG_MDM_SWIOTLB)
-#include <linux/debugfs.h>
-
-#define KERNEL_ADDR 0xFFFFFFC000000000
-#define NUM_DEVICE 50
-#define INDEX_DEV_ADDR 0
-#define INDEX_CNT 1
-
-
-static int tlbdump_show(struct seq_file *m, void *arg)
-{
-	int i,j;
-	int mmu_find = 0;
-	int mmu_index = -1;
-	struct device * hwdev;
-	unsigned long tlbmap[NUM_DEVICE][2];
-
-	seq_printf(m, "swiommu tlb alloc cnt \n");
-
-
-	for (i = 0; i < io_tlb_nslabs; i++) {
-
-		if (io_tlb_debug[i] != 0) {
-			mmu_find = 0;
-			for (j = 0; j <= mmu_index; j++) {
-				if (tlbmap[j][INDEX_DEV_ADDR] == io_tlb_debug[i]) {
-					tlbmap[j][INDEX_CNT]++;
-					mmu_find = 1;
-					break;
-				}
-			}
-			if (mmu_find == 0) {
-				mmu_index++;
-				tlbmap[mmu_index][INDEX_DEV_ADDR] = (unsigned long)io_tlb_debug[i];
-				tlbmap[mmu_index][INDEX_CNT] = 1;
-				if (mmu_index >= (NUM_DEVICE-1)) {
-					seq_printf(m,"num of debugging device is overflow \n");
-					break;
-				}
-			}
-		}
-	}
-
-	if (mmu_index == -1) {
-		seq_printf(m,"swiommu tlb is empty \n");
-		return 0;
-	}
-
-	for (i = 0; i <= mmu_index; i++) {
-		if (tlbmap[i][INDEX_DEV_ADDR] > KERNEL_ADDR) {
-			hwdev =  (struct device *)tlbmap[i][0];
-			seq_printf(m,"%s\t\t%lu  \n", hwdev->kobj.name,tlbmap[i][INDEX_CNT]);
-		} else {
-			seq_printf(m,"addr error 0x%lx  \n",tlbmap[i][INDEX_DEV_ADDR]);
-		}
-	}
-
-	return 0;
-}
-
-
-static int tlbdump_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, tlbdump_show,  inode->i_private);
-}
-
-static const struct file_operations swio_file_ops = {
-	.open		= tlbdump_open,
-	.read		= seq_read,
-	.llseek		= seq_lseek,
-	.release	= single_release,
-};
-
-static int __init swiommu_debug_init(void)
-{
-	struct dentry *swio_debug_root;
-
-	swio_debug_root = debugfs_create_dir("swiotlb", NULL);
-	if (!debugfs_create_file("tlb_dump", 0444,
-			swio_debug_root, NULL, &swio_file_ops))
-		goto fail;
-
-	return 0;
-fail:
-	debugfs_remove_recursive(swio_debug_root);
-	return -ENOMEM;
-}
-
-module_init(swiommu_debug_init);
-#endif
-

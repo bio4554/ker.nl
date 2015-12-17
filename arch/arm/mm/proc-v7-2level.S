@@ -37,15 +37,18 @@
  *	It is assumed that:
  *	- we are not using split page tables
  */
-ENTRY(cpu_v7_switch_mm)
+ENTRY(cpu_ca8_switch_mm)
 #ifdef CONFIG_MMU
 	mov	r2, #0
-	mmid	r1, r1				@ get mm->context.id
-	ALT_SMP(orr	r0, r0, #TTB_FLAGS_SMP)
-	ALT_UP(orr	r0, r0, #TTB_FLAGS_UP)
 #ifdef CONFIG_ARM_ERRATA_430973
 	mcr	p15, 0, r2, c7, c5, 6		@ flush BTAC/BTB
 #endif
+#endif
+ENTRY(cpu_v7_switch_mm)
+#ifdef CONFIG_MMU
+	mmid	r1, r1				@ get mm->context.id
+	ALT_SMP(orr	r0, r0, #TTB_FLAGS_SMP)
+	ALT_UP(orr	r0, r0, #TTB_FLAGS_UP)
 #ifdef CONFIG_PID_IN_CONTEXTIDR
 	mrc	p15, 0, r2, c13, c0, 1		@ read current context ID
 	lsr	r2, r2, #8			@ extract the PID
@@ -53,16 +56,15 @@ ENTRY(cpu_v7_switch_mm)
 #endif
 #ifdef CONFIG_ARM_ERRATA_754322
 	dsb
-#elif CONFIG_ARM_ERRATA_766421
-	dmb
 #endif
 	mcr	p15, 0, r1, c13, c0, 1		@ set context ID
 	isb
 	mcr	p15, 0, r0, c2, c0, 0		@ set TTB 0
 	isb
 #endif
-	mov	pc, lr
+	bx	lr
 ENDPROC(cpu_v7_switch_mm)
+ENDPROC(cpu_ca8_switch_mm)
 
 /*
  *	cpu_v7_set_pte_ext(ptep, pte)
@@ -108,7 +110,7 @@ ENTRY(cpu_v7_set_pte_ext)
 	ALT_SMP(W(nop))
 	ALT_UP (mcr	p15, 0, r0, c7, c10, 1)		@ flush_pte
 #endif
-	mov	pc, lr
+	bx	lr
 ENDPROC(cpu_v7_set_pte_ext)
 
 	/*
@@ -155,8 +157,6 @@ ENDPROC(cpu_v7_set_pte_ext)
 	mcr	p15, 0, \ttbr1, c2, c0, 1	@ load TTB1
 	.endm
 
-	__CPUINIT
-
 	/*   AT
 	 *  TFR   EV X F   I D LR    S
 	 * .EEE ..EE PUI. .T.T 4RVI ZWRS BLDP WCAM
@@ -167,5 +167,3 @@ ENDPROC(cpu_v7_set_pte_ext)
 	.type	v7_crval, #object
 v7_crval:
 	crval	clear=0x2120c302, mmuset=0x10c03c7d, ucset=0x00c01c7c
-
-	.previous

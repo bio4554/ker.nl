@@ -63,16 +63,11 @@
 #include <scsi/scsi_dbg.h>
 #include <scsi/scsi_eh.h>
 
-#define COMMAND_PRIORITY
-#define HEAD_OF_Q_FEATURE
-
 #include "ufs.h"
 #include "ufshci.h"
 
 #define UFSHCD "ufshcd"
 #define UFSHCD_DRIVER_VERSION "0.2"
-
-#define UFS_UNIQUE_NUMBER_LEN 17 /* manufacturer date 4 bytes + serial number 12 bytes + null */
 
 struct ufs_hba;
 
@@ -117,8 +112,6 @@ enum uic_link_state {
 	UIC_LINK_OFF_STATE	= 0, /* Link powered down or disabled */
 	UIC_LINK_ACTIVE_STATE	= 1, /* Link is in Fast/Slow/Sleep state */
 	UIC_LINK_HIBERN8_STATE	= 2, /* Link is in Hibernate state */
-	UIC_LINK_TRANS_ACTIVE_STATE	= 3,
-	UIC_LINK_TRANS_HIBERN8_STATE	= 4,
 };
 
 #define ufshcd_is_link_off(hba) ((hba)->uic_link_state == UIC_LINK_OFF_STATE)
@@ -131,10 +124,6 @@ enum uic_link_state {
 				    UIC_LINK_ACTIVE_STATE)
 #define ufshcd_set_link_hibern8(hba) ((hba)->uic_link_state = \
 				    UIC_LINK_HIBERN8_STATE)
-#define ufshcd_set_link_trans_active(hba) ((hba)->uic_link_state = \
-				    UIC_LINK_TRANS_ACTIVE_STATE)
-#define ufshcd_set_link_trans_hibern8(hba) ((hba)->uic_link_state = \
-				    UIC_LINK_TRANS_HIBERN8_STATE)
 
 /*
  * UFS Power management levels.
@@ -176,7 +165,6 @@ struct ufshcd_lrb {
 	struct utp_upiu_rsp *ucd_rsp_ptr;
 	struct ufshcd_sg_entry *ucd_prdt_ptr;
 
-	struct list_head list;
 	struct scsi_cmnd *cmd;
 	u8 *sense_buffer;
 	unsigned int sense_bufflen;
@@ -213,15 +201,6 @@ struct ufs_dev_cmd {
 	struct completion *complete;
 	wait_queue_head_t tag_wq;
 	struct ufs_query query;
-};
-
-/**
- * ufs_hba_variant: host specific data
- */
-struct ufs_hba_variant {
-	const struct ufs_hba_variant_ops *ops;
-	u32 quirks;
-	const void *vs_data;
 };
 
 /**
@@ -287,16 +266,11 @@ struct ufs_hba_variant_ops {
 	void    (*clk_scale_notify)(struct ufs_hba *);
 	int     (*setup_clocks)(struct ufs_hba *, bool);
 	int     (*setup_regulators)(struct ufs_hba *, bool);
-	void	(*host_reset)(struct ufs_hba *);
 	int     (*hce_enable_notify)(struct ufs_hba *, bool);
 	int     (*link_startup_notify)(struct ufs_hba *, bool);
 	int	(*pwr_change_notify)(struct ufs_hba *,
 					bool, struct ufs_pa_layer_attr *,
 					struct ufs_pa_layer_attr *);
-	void	(*set_nexus_t_xfer_req)(struct ufs_hba *,
-					int, struct scsi_cmnd *);
-	void	(*set_nexus_t_task_mgmt)(struct ufs_hba *, int, u8);
-	void	(*hibern8_notify)(struct ufs_hba *, u8, bool);
 	int     (*suspend)(struct ufs_hba *, enum ufs_pm_op);
 	int     (*resume)(struct ufs_hba *, enum ufs_pm_op);
 };
@@ -307,7 +281,6 @@ enum clk_gating_state {
 	CLKS_ON,
 	REQ_CLKS_OFF,
 	REQ_CLKS_ON,
-	__CLKS_ON,
 };
 
 /**
@@ -376,9 +349,9 @@ struct ufs_init_prefetch {
  * @uic_cmd_mutex: mutex for uic command
  * @tm_wq: wait queue for task management
  * @tm_tag_wq: wait queue for free task management slots
- * @tm_condition: condition variable for task management
  * @tm_slots_in_use: bit map of task management request slots in use
  * @pwr_done: completion for power mode change
+ * @tm_condition: condition variable for task management
  * @ufshcd_state: UFSHCD states
  * @eh_flags: Error handling flags
  * @intr_mask: Interrupt Mask Bits
@@ -393,6 +366,7 @@ struct ufs_init_prefetch {
  * @saved_err: sticky error mask
  * @saved_uic_err: sticky UIC error mask
  * @dev_cmd: ufs device management command information
+ * @last_dme_cmd_tstamp: time stamp of the last completed DME command
  * @auto_bkops_enabled: to track whether bkops is enabled in device
  * @vreg_info: UFS device voltage regulator information
  * @clk_list_head: UFS host controller clocks list node head
@@ -429,7 +403,7 @@ struct ufs_hba {
 	int pm_op_in_progress;
 
 	struct ufshcd_lrb *lrb;
-	volatile unsigned long lrb_in_use;
+	unsigned long lrb_in_use;
 
 	unsigned long outstanding_tasks;
 	unsigned long outstanding_reqs;
@@ -438,10 +412,18 @@ struct ufs_hba {
 	int nutrs;
 	int nutmrs;
 	u32 ufs_version;
-	const struct ufs_hba_variant_ops *vops;
+	struct ufs_hba_variant_ops *vops;
 	void *priv;
 	unsigned int irq;
 	bool is_irq_enabled;
+
+	/*
+	 * delay before each dme command is required as the unipro
+	 * layer has shown instabilities
+	 */
+	#define UFSHCD_QUIRK_DELAY_BEFORE_DME_CMDS		UFS_BIT(0)
+
+	unsigned int quirks;	/* Deviations from standard UFSHCI spec. */
 
 	wait_queue_head_t tm_wq;
 	wait_queue_head_t tm_tag_wq;
@@ -455,14 +437,12 @@ struct ufs_hba {
 	u32 ufshcd_state;
 	u32 eh_flags;
 	u32 intr_mask;
-	u32 transferred_sector;
 	u16 ee_ctrl_mask;
 	bool is_powered;
 	bool is_init_prefetch;
 	struct ufs_init_prefetch init_prefetch_data;
 
 	/* Work Queues */
-	struct workqueue_struct *ufshcd_workq;
 	struct work_struct eh_work;
 	struct work_struct eeh_work;
 
@@ -471,11 +451,10 @@ struct ufs_hba {
 	u32 uic_error;
 	u32 saved_err;
 	u32 saved_uic_err;
-	u32 tcx_replay_timer_expired_cnt;
-	u32 fcx_protection_timer_expired_cnt;
 
 	/* Device management request data */
 	struct ufs_dev_cmd dev_cmd;
+	ktime_t last_dme_cmd_tstamp;
 
 	/* Keeps information of the UFS device connected to this host */
 	struct ufs_dev_info dev_info;
@@ -488,9 +467,6 @@ struct ufs_hba {
 	struct ufs_pa_layer_attr pwr_info;
 	struct ufs_pwr_mode_info max_pwr_info;
 
-#ifdef CONFIG_ARGOS
-	struct notifier_block argos_nb;
-#endif
 	struct ufs_clk_gating clk_gating;
 	/* Control to enable/disable host capabilities */
 	u32 caps;
@@ -502,37 +478,10 @@ struct ufs_hba {
 #define UFSHCD_CAP_CLK_SCALING	(1 << 2)
 	/* Allow auto bkops to enabled during runtime suspend */
 #define UFSHCD_CAP_AUTO_BKOPS_SUSPEND (1 << 3)
-	/* Allow only hibern8 without clk gating */
-#define UFSHCD_CAP_FAKE_CLK_GATING (1 << 4)
 
 	struct devfreq *devfreq;
 	struct ufs_clk_scaling clk_scaling;
 	bool is_sys_suspended;
-
-	u32 quirks;
-
-	/* bkops enable/disable */
-	struct device_attribute bkops_en_attr;
-	struct device_attribute capabilities_attr;
-
-	struct buffer_head *self_test_bh;
-	uint32_t self_test_mode;
-	struct ufshcd_sg_entry *ucd_prdt_ptr_st;
-
-	/* UFSHCI doesn't support DWORD size in UTRD */
-#define UFSHCI_QUIRK_BROKEN_DWORD_UTRD		BIT(0)
-#define UFSHCI_QUIRK_BROKEN_REQ_LIST_CLR	BIT(1)
-#define UFSHCI_QUIRK_USE_OF_HCE			BIT(2)
-#define UFSHCI_QUIRK_SKIP_INTR_AGGR		BIT(3)
-
-	/* Device deviations from standard UFS device spec. */
-	unsigned int dev_quirks;
-
-	struct device_attribute unique_number_attr;
-	struct device_attribute manufacturer_id_attr;
-	char unique_number[UFS_UNIQUE_NUMBER_LEN];
-	u16 manufacturer_id;
-	u8 lifetime;
 };
 
 /* Returns true if clocks can be gated. Otherwise false */
@@ -551,11 +500,6 @@ static inline int ufshcd_is_clkscaling_enabled(struct ufs_hba *hba)
 static inline bool ufshcd_can_autobkops_during_suspend(struct ufs_hba *hba)
 {
 	return hba->caps & UFSHCD_CAP_AUTO_BKOPS_SUSPEND;
-}
-
-static inline bool ufshcd_can_fake_clkgating(struct ufs_hba *hba)
-{
-	return hba->caps & UFSHCD_CAP_FAKE_CLK_GATING;
 }
 
 #define ufshcd_writel(hba, val, reg)	\
@@ -609,8 +553,6 @@ extern int ufshcd_dme_set_attr(struct ufs_hba *hba, u32 attr_sel,
 			       u8 attr_set, u32 mib_val, u8 peer);
 extern int ufshcd_dme_get_attr(struct ufs_hba *hba, u32 attr_sel,
 			       u32 *mib_val, u8 peer);
-extern int ufshcd_config_pwr_mode(struct ufs_hba *hba,
-		struct ufs_pa_layer_attr *desired_pwr_mode);
 
 /* UIC command interfaces for DME primitives */
 #define DME_LOCAL	0
@@ -660,22 +602,4 @@ static inline int ufshcd_dme_peer_get(struct ufs_hba *hba,
 
 int ufshcd_hold(struct ufs_hba *hba, bool async);
 void ufshcd_release(struct ufs_hba *hba);
-
-int ufshcd_read_device_desc(struct ufs_hba *hba, u8 *buf, u32 size);
-int ufshcd_read_health_desc(struct ufs_hba *hba, u8 *buf, u32 size);
-
-#define ASCII_STD true
-#define UTF16_STD false
-int ufshcd_read_string_desc(struct ufs_hba *hba, int desc_index, u8 *buf,
-				u32 size, bool ascii);
-
-#define UFS_DEV_ATTR(name, fmt, args...)					\
-static ssize_t ufs_##name##_show (struct device *dev, struct device_attribute *attr, char *buf)	\
-{										\
-	struct Scsi_Host *host = container_of(dev, struct Scsi_Host, shost_dev);\
-	struct ufs_hba *hba = shost_priv(host);                                 \
-	return sprintf(buf, fmt, args);						\
-}										\
-static DEVICE_ATTR(name, S_IRUGO, ufs_##name##_show, NULL)
-
 #endif /* End of Header */

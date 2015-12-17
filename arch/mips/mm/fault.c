@@ -5,6 +5,7 @@
  *
  * Copyright (C) 1995 - 2000 by Ralf Baechle
  */
+#include <linux/context_tracking.h>
 #include <linux/signal.h>
 #include <linux/sched.h>
 #include <linux/interrupt.h>
@@ -13,6 +14,7 @@
 #include <linux/string.h>
 #include <linux/types.h>
 #include <linux/ptrace.h>
+#include <linux/ratelimit.h>
 #include <linux/mman.h>
 #include <linux/mm.h>
 #include <linux/smp.h>
@@ -27,13 +29,15 @@
 #include <asm/highmem.h>		/* For VMALLOC_END */
 #include <linux/kdebug.h>
 
+int show_unhandled_signals = 1;
+
 /*
  * This routine handles page faults.  It determines the address,
  * and the problem, and then passes it off to one of the appropriate
  * routines.
  */
-asmlinkage void __kprobes do_page_fault(struct pt_regs *regs, unsigned long write,
-			      unsigned long address)
+static void __kprobes __do_page_fault(struct pt_regs *regs, unsigned long write,
+	unsigned long address)
 {
 	struct vm_area_struct * vma = NULL;
 	struct task_struct *tsk = current;
@@ -42,6 +46,8 @@ asmlinkage void __kprobes do_page_fault(struct pt_regs *regs, unsigned long writ
 	siginfo_t info;
 	int fault;
 	unsigned int flags = FAULT_FLAG_ALLOW_RETRY | FAULT_FLAG_KILLABLE;
+
+	static DEFINE_RATELIMIT_STATE(ratelimit_state, 5 * HZ, 10);
 
 #if 0
 	printk("Cpu%d[%s:%d:%0*lx:%ld:%0*lx]\n", raw_smp_processor_id(),
@@ -202,15 +208,21 @@ bad_area_nosemaphore:
 	if (user_mode(regs)) {
 		tsk->thread.cp0_badvaddr = address;
 		tsk->thread.error_code = write;
-#if 0
-		printk("do_page_fault() #2: sending SIGSEGV to %s for "
-		       "invalid %s\n%0*lx (epc == %0*lx, ra == %0*lx)\n",
-		       tsk->comm,
-		       write ? "write access to" : "read access from",
-		       field, address,
-		       field, (unsigned long) regs->cp0_epc,
-		       field, (unsigned long) regs->regs[31]);
-#endif
+		if (show_unhandled_signals &&
+		    unhandled_signal(tsk, SIGSEGV) &&
+		    __ratelimit(&ratelimit_state)) {
+			pr_info("\ndo_page_fault(): sending SIGSEGV to %s for invalid %s %0*lx",
+				tsk->comm,
+				write ? "write access to" : "read access from",
+				field, address);
+			pr_info("epc = %0*lx in", field,
+				(unsigned long) regs->cp0_epc);
+			print_vma_addr(" ", regs->cp0_epc);
+			pr_info("ra  = %0*lx in", field,
+				(unsigned long) regs->regs[31]);
+			print_vma_addr(" ", regs->regs[31]);
+			pr_info("\n");
+		}
 		info.si_signo = SIGSEGV;
 		info.si_errno = 0;
 		/* info.si_code has been set above */
@@ -317,4 +329,14 @@ vmalloc_fault:
 		return;
 	}
 #endif
+}
+
+asmlinkage void __kprobes do_page_fault(struct pt_regs *regs,
+	unsigned long write, unsigned long address)
+{
+	enum ctx_state prev_state;
+
+	prev_state = exception_enter();
+	__do_page_fault(regs, write, address);
+	exception_exit(prev_state);
 }

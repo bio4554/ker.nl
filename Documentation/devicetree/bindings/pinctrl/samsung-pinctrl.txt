@@ -7,10 +7,18 @@ on-chip controllers onto these pads.
 
 Required Properties:
 - compatible: should be one of the following.
+  - "samsung,s3c2412-pinctrl": for S3C2412-compatible pin-controller,
+  - "samsung,s3c2416-pinctrl": for S3C2416-compatible pin-controller,
+  - "samsung,s3c2440-pinctrl": for S3C2440-compatible pin-controller,
+  - "samsung,s3c2450-pinctrl": for S3C2450-compatible pin-controller,
   - "samsung,s3c64xx-pinctrl": for S3C64xx-compatible pin-controller,
+  - "samsung,s5pv210-pinctrl": for S5PV210-compatible pin-controller,
   - "samsung,exynos4210-pinctrl": for Exynos4210 compatible pin-controller.
   - "samsung,exynos4x12-pinctrl": for Exynos4x12 compatible pin-controller.
   - "samsung,exynos5250-pinctrl": for Exynos5250 compatible pin-controller.
+  - "samsung,exynos5260-pinctrl": for Exynos5260 compatible pin-controller.
+  - "samsung,exynos5420-pinctrl": for Exynos5420 compatible pin-controller.
+  - "samsung,exynos7-pinctrl": for Exynos7 compatible pin-controller.
 
 - reg: Base address of the pin controller hardware module and length of
   the address space it occupies.
@@ -68,6 +76,7 @@ Required Properties:
   "samsung,pins" property of the child node. The following pin configuration
   properties are supported.
 
+  - samsung,pin-val: Initial value of pin output buffer.
   - samsung,pin-pud: Pull up/down configuration.
   - samsung,pin-drv: Drive strength configuration.
   - samsung,pin-pud-pdn: Pull up/down configuration in power down mode.
@@ -120,10 +129,16 @@ B. External Wakeup Interrupts: For supporting external wakeup interrupts, a
 
    - compatible: identifies the type of the external wakeup interrupt controller
      The possible values are:
+     - samsung,s3c2410-wakeup-eint: represents wakeup interrupt controller
+       found on Samsung S3C24xx SoCs except S3C2412 and S3C2413,
+     - samsung,s3c2412-wakeup-eint: represents wakeup interrupt controller
+       found on Samsung S3C2412 and S3C2413 SoCs,
      - samsung,s3c64xx-wakeup-eint: represents wakeup interrupt controller
        found on Samsung S3C64xx SoCs,
      - samsung,exynos4210-wakeup-eint: represents wakeup interrupt controller
-       found on Samsung Exynos4210 SoC.
+       found on Samsung Exynos4210 and S5PC110/S5PV210 SoCs.
+     - samsung,exynos7-wakeup-eint: represents wakeup interrupt controller
+       found on Samsung Exynos7 SoC.
    - interrupt-parent: phandle of the interrupt parent to which the external
      wakeup interrupts are forwarded to.
    - interrupts: interrupt used by multiplexed wakeup interrupts.
@@ -155,6 +170,18 @@ Aliases:
 
 All the pin controller nodes should be represented in the aliases node using
 the following format 'pinctrl{n}' where n is a unique number for the alias.
+
+Aliases for controllers compatible with "samsung,exynos7-pinctrl":
+- pinctrl0: pin controller of ALIVE block,
+- pinctrl1: pin controller of BUS0 block,
+- pinctrl2: pin controller of NFC block,
+- pinctrl3: pin controller of TOUCH block,
+- pinctrl4: pin controller of FF block,
+- pinctrl5: pin controller of ESE block,
+- pinctrl6: pin controller of FSYS0 block,
+- pinctrl7: pin controller of FSYS1 block,
+- pinctrl8: pin controller of BUS1 block,
+- pinctrl9: pin controller of AUDIO block,
 
 Example: A pin-controller node with pin banks:
 

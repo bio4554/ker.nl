@@ -4,10 +4,10 @@
 
 # Create $(fwabs) from $(CONFIG_EXTRA_FIRMWARE_DIR) -- if it doesn't have a
 # leading /, it's relative to $(srctree).
-fwdir := $(subst ",,$(CONFIG_EXTRA_FIRMWARE_DIR))
+fwdir := $(subst $(quote),,$(CONFIG_EXTRA_FIRMWARE_DIR))
 fwabs := $(addprefix $(srctree)/,$(filter-out /%,$(fwdir)))$(filter /%,$(fwdir))
 
-fw-external-y := $(subst ",,$(CONFIG_EXTRA_FIRMWARE))
+fw-external-y := $(subst $(quote),,$(CONFIG_EXTRA_FIRMWARE))
 
 # There are three cases to care about:
 # 1. Building kernel with CONFIG_FIRMWARE_IN_KERNEL=y -- $(fw-shipped-y) should
@@ -105,7 +105,6 @@ fw-shipped-$(CONFIG_USB_KAWETH) += kaweth/new_code.bin kaweth/trigger_code.bin \
 				   kaweth/new_code_fix.bin \
 				   kaweth/trigger_code_fix.bin
 ifdef CONFIG_FIRMWARE_IN_KERNEL
-fw-shipped-$(CONFIG_EXYNOS_MBOX) += apm_0116_fw_v0.h
 fw-shipped-$(CONFIG_USB_SERIAL_KEYSPAN_MPR) += keyspan/mpr.fw
 fw-shipped-$(CONFIG_USB_SERIAL_KEYSPAN_USA18X) += keyspan/usa18x.fw
 fw-shipped-$(CONFIG_USB_SERIAL_KEYSPAN_USA19) += keyspan/usa19.fw
@@ -137,67 +136,7 @@ fw-shipped-$(CONFIG_USB_VICAM) += vicam/firmware.fw
 fw-shipped-$(CONFIG_VIDEO_CPIA2) += cpia2/stv0672_vp4.bin
 fw-shipped-$(CONFIG_YAM) += yam/1200.bin yam/9600.bin
 
-fw-shipped-$(CONFIG_EPEN_WACOM_W9012) += epen/W9012_T.bin epen/W9012_TB.bin
-fw-shipped-$(CONFIG_EPEN_WACOM_W9014) += epen/W9014_NOBLE.bin
-
-TSPFIRMWARE_DIRECTORY = firmware/tsp_synaptics
-ifeq ($(shell test -d $(TSPFIRMWARE_DIRECTORY) && echo yes),yes)
-fw-shipped-$(CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_RMI) += tsp_synaptics/synaptics_b0_h.fw \
-	tsp_synaptics/synaptics_b0_fac.fw
-fw-shipped-$(CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_DSX2) += tsp_synaptics/synaptics_s5300_v.fw \
-					tsp_synaptics/synaptics_s5300_v_ab.fw tsp_synaptics/synaptics_s5300_v_ac.fw
-else
-$(warning '$(TSPFIRMWARE_DIRECTORY)' directory dose not exist)
-endif
-
-TSPFIRMWARE_DIRECTORY = firmware/tsp_stm
-ifeq ($(shell test -d $(TSPFIRMWARE_DIRECTORY) && echo yes),yes)
-fw-shipped-$(CONFIG_TOUCHSCREEN_FTS) += tsp_stm/stm_tb_integ.fw tsp_stm/stm_z2a.fw \
-	tsp_stm/stm_z2i.fw tsp_stm/stm_z1.fw tsp_stm/stm_za.fw
-fw-shipped-$(CONFIG_TOUCHSCREEN_FTS5AD56) += tsp_stm/stm_z1.fw tsp_stm/noble.fw \
-	tsp_stm/zen.fw
-else
-$(warning '$(TSPFIRMWARE_DIRECTORY)' directory dose not exist)
-endif
-
-fw-shipped-$(CONFIG_KEYBOARD_ABOV_TOUCH) += abov/abov_noble.fw abov/abov_zen.fw \
-							abov/abov_valley.fw
-fw-shipped-$(CONFIG_KEYBOARD_CYPRESS_TOUCH_MBR31X5) += cypress/cypress_zerof.fw \
-							cypress/cypress_vlte.fw cypress/cypress_noble.fw
-fw-shipped-$(CONFIG_KEYBOARD_CYPRESS_TOUCH_20075) += cypress/cypress_k.fw
 fw-shipped-all := $(fw-shipped-y) $(fw-shipped-m) $(fw-shipped-)
-
-# Sensorhub
-ifdef CONFIG_SENSORS_SSP_STM
-	ifdef CONFIG_SENSORS_SSP_NOBLELTE
-		fw-shipped-y += ssp_stm_noble.fw ssp_crashed.fw
-	else
-		ifdef CONFIG_SENSORS_SSP_ZENLTE
-			fw-shipped-y += ssp_stm_noble.fw ssp_crashed.fw
-		else
-			fw-shipped-y += ssp_stm.fw ssp_crashed.fw
-		endif
-	endif
-
-	ifdef CONFIG_SENSORS_SSP_VLTE
-		fw-shipped-y += ssp_stm_v.fw ssp_crashed.fw
-	endif
-endif
-
-# Wireless charger
-#fw-shipped-$(CONFIG_WIRELESS_FIRMWARE_UPDATE) += idt/p9220_otp.bin idt/p9220_sram.bin
-
-# IrDA FPGA
-fw-shipped-$(CONFIG_SEC_FPGA_ICE40XX) += ice40xx/i2c_top_bitmap_1.fw
-
-#for ice5 led matrix
-fw-shipped-$(CONFIG_ICE5_FPGA_LED_MATRIX) += ice50/EINK0.fw ice50/EINK1.fw
-
-# Directories which we _might_ need to create, so we have a rule for them.
-firmware-dirs := $(sort $(addprefix $(objtree)/$(obj)/,$(dir $(fw-external-y) $(fw-shipped-all))))
-
-quiet_cmd_mkdir = MKDIR   $(patsubst $(objtree)/%,%,$@)
-      cmd_mkdir = mkdir -p $@
 
 quiet_cmd_ihex  = IHEX    $@
       cmd_ihex  = $(OBJCOPY) -Iihex -Obinary $< $@
@@ -239,21 +178,10 @@ wordsize_deps := $(wildcard include/config/64bit.h include/config/32bit.h \
 		include/config/superh32.h include/config/superh64.h \
 		include/config/x86_32.h include/config/x86_64.h)
 
-# Workaround for make < 3.81, where .SECONDEXPANSION doesn't work.
-# It'll end up depending on these targets, so make them a PHONY rule which
-# depends on _all_ the directories in $(firmware-dirs), and it'll work out OK.
-PHONY += $(objtree)/$$(%) $(objtree)/$(obj)/$$(%)
-$(objtree)/$$(%) $(objtree)/$(obj)/$$(%): $(firmware-dirs)
-	@true
-
-# For the $$(dir %) trick, where we need % to be expanded first.
-.SECONDEXPANSION:
-
-$(patsubst %,$(obj)/%.gen.S, $(fw-shipped-y)): %: $(wordsize_deps) \
-		| $(objtree)/$$(dir %)
+$(patsubst %,$(obj)/%.gen.S, $(fw-shipped-y)): %: $(wordsize_deps)
 	$(call cmd,fwbin,$(patsubst %.gen.S,%,$@))
 $(patsubst %,$(obj)/%.gen.S, $(fw-external-y)): %: $(wordsize_deps) \
-		include/config/extra/firmware/dir.h | $(objtree)/$$(dir %)
+		include/config/extra/firmware/dir.h
 	$(call cmd,fwbin,$(fwabs)/$(patsubst $(obj)/%.gen.S,%,$@))
 
 # The .o files depend on the binaries directly; the .S files don't.
@@ -262,7 +190,7 @@ $(patsubst %,$(obj)/%.gen.o, $(fw-external-y)): $(obj)/%.gen.o: $(fwdir)/%
 
 # .ihex is used just as a simple way to hold binary files in a source tree
 # where binaries are frowned upon. They are directly converted with objcopy.
-$(obj)/%: $(obj)/%.ihex | $(objtree)/$(obj)/$$(dir %)
+$(obj)/%: $(obj)/%.ihex
 	$(call cmd,ihex)
 
 # Don't depend on ihex2fw if we're installing and it already exists.
@@ -281,18 +209,21 @@ endif
 # is actually meaningful, because the firmware has to be loaded in a certain
 # order rather than as a single binary blob. Thus, we convert them into our
 # more compact binary representation of ihex records (<linux/ihex.h>)
-$(obj)/%.fw: $(obj)/%.HEX $(ihex2fw_dep) | $(objtree)/$(obj)/$$(dir %)
+$(obj)/%.fw: $(obj)/%.HEX $(ihex2fw_dep)
 	$(call cmd,ihex2fw)
 
 # .H16 is our own modified form of Intel HEX, with 16-bit length for records.
-$(obj)/%.fw: $(obj)/%.H16 $(ihex2fw_dep) | $(objtree)/$(obj)/$$(dir %)
+$(obj)/%.fw: $(obj)/%.H16 $(ihex2fw_dep)
 	$(call cmd,h16tofw)
-
-$(firmware-dirs):
-	$(call cmd,mkdir)
 
 obj-y				 += $(patsubst %,%.gen.o, $(fw-external-y))
 obj-$(CONFIG_FIRMWARE_IN_KERNEL) += $(patsubst %,%.gen.o, $(fw-shipped-y))
+
+ifeq ($(KBUILD_SRC),)
+# Makefile.build only creates subdirectories for O= builds, but external
+# firmware might live outside the kernel source tree
+_dummy := $(foreach d,$(addprefix $(obj)/,$(dir $(fw-external-y))), $(shell [ -d $(d) ] || mkdir -p $(d)))
+endif
 
 # Remove .S files and binaries created from ihex
 # (during 'make clean' .config isn't included so they're all in $(fw-shipped-))
@@ -301,6 +232,6 @@ targets := $(fw-shipped-) $(patsubst $(obj)/%,%, \
 
 # Without this, built-in.o won't be created when it's empty, and the
 # final vmlinux link will fail.
-obj-n := dummy
+obj- := dummy
 
 hostprogs-y := ihex2fw

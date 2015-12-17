@@ -172,7 +172,7 @@ static struct crypto_alg *crypto_larval_wait(struct crypto_alg *alg)
 	struct crypto_larval *larval = (void *)alg;
 	long timeout;
 
-	timeout = wait_for_completion_killable_timeout(
+	timeout = wait_for_completion_interruptible_timeout(
 		&larval->completion, 60 * HZ);
 
 	alg = larval->adult;
@@ -256,6 +256,16 @@ struct crypto_alg *crypto_alg_mod_lookup(const char *name, u32 type, u32 mask)
 		type |= CRYPTO_ALG_TESTED;
 		mask |= CRYPTO_ALG_TESTED;
 	}
+
+	/*
+	 * If the internal flag is set for a cipher, require a caller to
+	 * to invoke the cipher with the internal flag to use that cipher.
+	 * Also, if a caller wants to allocate a cipher that may or may
+	 * not be an internal cipher, use type | CRYPTO_ALG_INTERNAL and
+	 * !(mask & CRYPTO_ALG_INTERNAL).
+	 */
+	if (!((type | mask) & CRYPTO_ALG_INTERNAL))
+		mask |= CRYPTO_ALG_INTERNAL;
 
 	larval = crypto_larval_lookup(name, type, mask);
 	if (IS_ERR(larval) || !crypto_is_larval(larval))
@@ -353,9 +363,6 @@ void crypto_shoot_alg(struct crypto_alg *alg)
 }
 EXPORT_SYMBOL_GPL(crypto_shoot_alg);
 
-#if FIPS_FUNC_TEST == 4
-int g_tfm_sz = 0;
-#endif
 struct crypto_tfm *__crypto_alloc_tfm(struct crypto_alg *alg, u32 type,
 				      u32 mask)
 {
@@ -363,19 +370,11 @@ struct crypto_tfm *__crypto_alloc_tfm(struct crypto_alg *alg, u32 type,
 	unsigned int tfm_size;
 	int err = -ENOMEM;
 
-#ifdef CONFIG_CRYPTO_FIPS
-	if (unlikely(in_fips_err()))
-		return ERR_PTR(-EACCES);
-#endif
-
 	tfm_size = sizeof(*tfm) + crypto_ctxsize(alg, type, mask);
 	tfm = kzalloc(tfm_size, GFP_KERNEL);
 	if (tfm == NULL)
 		goto out_err;
 
-#if FIPS_FUNC_TEST == 4
-	g_tfm_sz = tfm_size;
-#endif
 	tfm->__crt_alg = alg;
 
 	err = crypto_init_ops(tfm, type, mask);
@@ -407,7 +406,7 @@ EXPORT_SYMBOL_GPL(__crypto_alloc_tfm);
  *	@mask: Mask for type comparison
  *
  *	This function should not be used by new algorithm types.
- *	Plesae use crypto_alloc_tfm instead.
+ *	Please use crypto_alloc_tfm instead.
  *
  *	crypto_alloc_base() will first attempt to locate an already loaded
  *	algorithm.  If that fails and the kernel supports dynamically loadable
@@ -426,11 +425,6 @@ struct crypto_tfm *crypto_alloc_base(const char *alg_name, u32 type, u32 mask)
 {
 	struct crypto_tfm *tfm;
 	int err;
-
-#ifdef CONFIG_CRYPTO_FIPS
-	if (unlikely(in_fips_err()))
-		return ERR_PTR(-EACCES);
-#endif
 
 	for (;;) {
 		struct crypto_alg *alg;
@@ -451,7 +445,7 @@ struct crypto_tfm *crypto_alloc_base(const char *alg_name, u32 type, u32 mask)
 err:
 		if (err != -EAGAIN)
 			break;
-		if (fatal_signal_pending(current)) {
+		if (signal_pending(current)) {
 			err = -EINTR;
 			break;
 		}
@@ -470,13 +464,6 @@ void *crypto_create_tfm(struct crypto_alg *alg,
 	unsigned int total;
 	int err = -ENOMEM;
 
-#ifdef CONFIG_CRYPTO_FIPS
-	if (unlikely(in_fips_err())) {
-		printk(KERN_ERR
-			"Fail crypto_create_tfm due to fips error state.\n");
-		return ERR_PTR(-EACCES);
-	}
-#endif
 	tfmsize = frontend->tfmsize;
 	total = tfmsize + sizeof(*tfm) + frontend->extsize(alg);
 
@@ -556,11 +543,6 @@ void *crypto_alloc_tfm(const char *alg_name,
 	void *tfm;
 	int err;
 
-#ifdef CONFIG_CRYPTO_FIPS
-	if (unlikely(in_fips_err()))
-		return ERR_PTR(-EACCES);
-#endif
-
 	for (;;) {
 		struct crypto_alg *alg;
 
@@ -580,7 +562,7 @@ void *crypto_alloc_tfm(const char *alg_name,
 err:
 		if (err != -EAGAIN)
 			break;
-		if (fatal_signal_pending(current)) {
+		if (signal_pending(current)) {
 			err = -EINTR;
 			break;
 		}
@@ -611,19 +593,7 @@ void crypto_destroy_tfm(void *mem, struct crypto_tfm *tfm)
 		alg->cra_exit(tfm);
 	crypto_exit_ops(tfm);
 	crypto_mod_put(alg);
-#if FIPS_FUNC_TEST == 4
-    {
-        extern void hexdump(unsigned char *, unsigned int);
-        int t = ksize(mem);
-        printk(KERN_ERR "FIPS: Zeroization crypto_destroy_tfm %d\n", t);
-        hexdump(mem, t);
-#endif
 	kzfree(mem);
-#if FIPS_FUNC_TEST == 4
-        printk(KERN_ERR "FIPS: Zeroization crypto_destroy_tfm \n");
-        hexdump(mem, t);
-    }
-#endif
 }
 EXPORT_SYMBOL_GPL(crypto_destroy_tfm);
 

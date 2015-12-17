@@ -163,8 +163,9 @@ static void notify_netlink_uevent(const char *iface, struct idletimer_tg *timer)
 	pr_debug("putting nlmsg: <%s> <%s> <%s> <%s>\n", iface_msg, state_msg,
 		 timestamp_msg, uid_msg);
 	kobject_uevent_env(idletimer_tg_kobj, KOBJ_CHANGE, envp);
-
 	return;
+
+
 }
 
 static
@@ -285,6 +286,7 @@ static int idletimer_tg_create(struct idletimer_tg_info *info)
 		goto out;
 	}
 
+	sysfs_attr_init(&info->timer->attr.attr);
 	info->timer->attr.attr.name = kstrdup(info->label, GFP_KERNEL);
 	if (!info->timer->attr.attr.name) {
 		ret = -ENOMEM;
@@ -352,12 +354,8 @@ static void reset_timer(const struct idletimer_tg_info *info,
 
 		/* Stores the uid resposible for waking up the radio */
 		if (skb && (skb->sk)) {
-			struct sock *sk = skb->sk;
-			read_lock_bh(&sk->sk_callback_lock);
-			if ((sk->sk_socket) && (sk->sk_socket->file) &&
-		    (sk->sk_socket->file->f_cred))
-				timer->uid = sk->sk_socket->file->f_cred->uid;
-			read_unlock_bh(&sk->sk_callback_lock);
+			timer->uid = from_kuid_munged(current_user_ns(),
+						sock_i_uid(skb->sk));
 		}
 
 		/* checks if there is a pending inactive notification*/

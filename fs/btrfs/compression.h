@@ -45,7 +45,9 @@ int btrfs_submit_compressed_write(struct inode *inode, u64 start,
 				  unsigned long nr_pages);
 int btrfs_submit_compressed_read(struct inode *inode, struct bio *bio,
 				 int mirror_num, unsigned long bio_flags);
-
+void btrfs_clear_biovec_end(struct bio_vec *bvec, int vcnt,
+				   unsigned long pg_index,
+				   unsigned long pg_offset);
 struct btrfs_compress_op {
 	struct list_head *(*alloc_workspace)(void);
 
@@ -73,16 +75,9 @@ struct btrfs_compress_op {
 			  struct page *dest_page,
 			  unsigned long start_byte,
 			  size_t srclen, size_t destlen);
-
-	/* skip compression under threshold */
-	u32 min_compress_thresh;
-	/* compress a chunk of given size */
-	u32 max_coompres_thresh;
 };
 
-extern struct btrfs_compress_op btrfs_zlib_compress;
-extern struct btrfs_compress_op btrfs_lzo_compress;
-extern struct btrfs_compress_op btrfs_lz4_compress;
-extern struct btrfs_compress_op btrfs_lz4hc_compress;
+extern const struct btrfs_compress_op btrfs_zlib_compress;
+extern const struct btrfs_compress_op btrfs_lzo_compress;
 
 #endif
